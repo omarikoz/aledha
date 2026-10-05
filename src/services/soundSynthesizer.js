@@ -147,9 +147,20 @@ class SoundSynthesizer {
       const resp = await fetch(soundUrl);
       if (resp.ok) {
         const arrayBuf = await resp.arrayBuffer();
-        const decoded = await ctx.decodeAudioData(arrayBuf);
-        if (!this.bufferCache) this.bufferCache = new Map();
-        this.bufferCache.set(soundItem.id, decoded);
+        const decoded = await new Promise((resolve) => {
+          ctx.decodeAudioData(
+            arrayBuf.slice(0),
+            (buf) => resolve(buf),
+            (err) => {
+              console.warn('decodeAudioData error:', err);
+              resolve(null);
+            }
+          );
+        });
+        if (decoded) {
+          if (!this.bufferCache) this.bufferCache = new Map();
+          this.bufferCache.set(soundItem.id, decoded);
+        }
         return decoded;
       }
     } catch (e) {

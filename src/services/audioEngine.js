@@ -23,8 +23,9 @@ class AudioEngine {
 
   // Unlock AudioContext for iOS Safari / Mobile
   unlockAudioContext() {
-    if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
+    const ctx = this.getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
     }
   }
 
@@ -65,18 +66,31 @@ class AudioEngine {
   }
 
   // Setup AnalyserNode for real-time visualizer
+  // Setup AnalyserNode for real-time visualizer
   setupAnalyser(stream) {
     const ctx = this.getAudioContext();
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.6;
-    source.connect(analyser);
-    this.analyser = analyser;
-    return analyser;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    try {
+      if (this._analyserSource) {
+        try { this._analyserSource.disconnect(); } catch (e) {}
+      }
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      this._analyserSource = source;
+      this.analyser = analyser;
+      return analyser;
+    } catch (e) {
+      console.warn('setupAnalyser error:', e);
+      return this.analyser;
+    }
   }
 
-  // Record audio for durationMs: records raw PCM into universal WAV (100% iOS Safari & Android compatible)
+  // Record audio for durationMs: records using MediaRecorder with PCM fallback for 100% device compatibility
   recordAudio(durationMs, onVolumeUpdate) {
     return new Promise(async (resolve, reject) => {
       try {
@@ -86,109 +100,169 @@ class AudioEngine {
         }
 
         const stream = await this.initMic();
+        // Setup analyser for real-time visualizer
+        this.setupAnalyser(stream);
 
-        // 1. Setup Analyser for visualizer waveform
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        analyser.smoothingTimeConstant = 0.5;
-        source.connect(analyser);
-        this.analyser = analyser;
-
-        // 2. Setup ScriptProcessor for uncompressed PCM capture (guaranteed 100% playable on iPhone)
-        const bufferSize = 4096;
-        const processor = ctx.createScriptProcessor(bufferSize, 1, 1);
-        const pcmChunks = [];
-        let totalPcmSamples = 0;
-        let isRecording = true;
-
-        processor.onaudioprocess = (e) => {
-          if (!isRecording) return;
-          const input = e.inputBuffer.getChannelData(0);
-          const copy = new Float32Array(input.length);
-          copy.set(input);
-          pcmChunks.push(copy);
-          totalPcmSamples += input.length;
-
-          // Real-time RMS for mic level bar
-          let sumSquares = 0;
-          for (let i = 0; i < input.length; i++) {
-            sumSquares += input[i] * input[i];
+        // Find best supported MIME type for MediaRecorder
+        let mimeType = '';
+        if (typeof MediaRecorder !== 'undefined') {
+          const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/aac',
+            'audio/ogg'
+          ];
+          for (const t of types) {
+            if (MediaRecorder.isTypeSupported(t)) {
+              mimeType = t;
+              break;
+            }
           }
-          const rms = Math.sqrt(sumSquares / input.length);
-          if (onVolumeUpdate) {
-            // Boost volume sensitivity for mobile phone mics
-            onVolumeUpdate(Math.min(1.0, rms * 5.0));
-          }
-        };
+        }
 
-        source.connect(processor);
-        // Connect to dummy gain to ensure Chrome/Safari processes the audio thread
-        const dummyGain = ctx.createGain();
-        dummyGain.gain.value = 0;
-        processor.connect(dummyGain);
-        dummyGain.connect(ctx.destination);
-
-        // 3. Optional MediaRecorder backup
         let mediaRecorder = null;
         const mrChunks = [];
-        try {
-          let mimeType = 'audio/webm';
-          if (typeof MediaRecorder !== 'undefined') {
-            if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-            else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-            mediaRecorder = new MediaRecorder(stream, { mimeType });
-            mediaRecorder.ondataavailable = (ev) => {
-              if (ev.data && ev.data.size > 0) mrChunks.push(ev.data);
+
+        if (typeof MediaRecorder !== 'undefined') {
+          try {
+            mediaRecorder = mimeType
+              ? new MediaRecorder(stream, { mimeType })
+              : new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = (e) => {
+              if (e.data && e.data.size > 0) {
+                mrChunks.push(e.data);
+              }
             };
-            mediaRecorder.start();
+            // 80ms slice guarantees chunks arrive continuously without missing data
+            mediaRecorder.start(80);
+          } catch (mrErr) {
+            console.warn('Failed to start MediaRecorder, falling back to Web Audio PCM:', mrErr);
+            mediaRecorder = null;
           }
-        } catch (mrErr) {
-          console.warn('MediaRecorder not available or failed, using PCM recorder:', mrErr);
+        }
+
+        // ScriptProcessor backup (retained on this._activeProcessor to prevent V8 garbage collection)
+        let scriptNode = null;
+        let dummyGain = null;
+        let sourceNode = null;
+        const pcmChunks = [];
+        let totalPcmSamples = 0;
+        let isCapturing = true;
+
+        try {
+          sourceNode = ctx.createMediaStreamSource(stream);
+          scriptNode = ctx.createScriptProcessor(4096, 1, 1);
+          this._activeProcessor = scriptNode; // Prevent garbage collection!
+
+          scriptNode.onaudioprocess = (e) => {
+            if (!isCapturing) return;
+            const input = e.inputBuffer.getChannelData(0);
+            const copy = new Float32Array(input.length);
+            copy.set(input);
+            pcmChunks.push(copy);
+            totalPcmSamples += input.length;
+
+            if (onVolumeUpdate) {
+              let sum = 0;
+              for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+              const rms = Math.sqrt(sum / input.length);
+              onVolumeUpdate(Math.min(1.0, rms * 6.0));
+            }
+          };
+
+          dummyGain = ctx.createGain();
+          dummyGain.gain.value = 0;
+          sourceNode.connect(scriptNode);
+          scriptNode.connect(dummyGain);
+          dummyGain.connect(ctx.destination);
+        } catch (spErr) {
+          console.warn('ScriptProcessor setup error:', spErr);
         }
 
         // Auto-stop after durationMs
         setTimeout(async () => {
-          isRecording = false;
+          isCapturing = false;
 
-          try {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
+          // 1. Stop MediaRecorder if running
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            try {
               mediaRecorder.stop();
-            }
-          } catch (e) {}
-
-          // Disconnect audio graph nodes
-          try {
-            processor.disconnect();
-            dummyGain.disconnect();
-            source.disconnect();
-          } catch (e) {}
-
-          // Combine raw PCM float32 samples
-          const mergedSamples = new Float32Array(totalPcmSamples);
-          let offset = 0;
-          for (let i = 0; i < pcmChunks.length; i++) {
-            mergedSamples.set(pcmChunks[i], offset);
-            offset += pcmChunks[i].length;
+            } catch (e) {}
           }
 
-          // Build AudioBuffer in memory (0% chance of decode failure!)
-          const sampleRate = ctx.sampleRate || 44100;
-          const audioBuffer = ctx.createBuffer(1, Math.max(1, mergedSamples.length), sampleRate);
-          audioBuffer.getChannelData(0).set(mergedSamples);
+          // 2. Disconnect ScriptProcessor nodes
+          if (scriptNode) {
+            try {
+              scriptNode.disconnect();
+              if (dummyGain) dummyGain.disconnect();
+              if (sourceNode) sourceNode.disconnect();
+            } catch (e) {}
+            this._activeProcessor = null;
+          }
 
-          // Build universal WAV Blob & DataURL (100% playable on iOS Safari, Android, Chrome)
-          const wavBlob = this.float32ToWav(mergedSamples, sampleRate);
-          const recordedUrl = URL.createObjectURL(wavBlob);
-          const dataUrl = await this.blobToDataUrl(wavBlob);
+          // Small delay for MediaRecorder chunk flushing
+          await new Promise((r) => setTimeout(r, 80));
+
+          let finalBlob = null;
+          let finalDataUrl = null;
+          let finalObjectUrl = null;
+          let finalAudioBuffer = null;
+
+          // Priority 1: Use MediaRecorder output if chunks exist
+          if (mrChunks.length > 0) {
+            const blobType = mimeType || mrChunks[0].type || 'audio/webm';
+            finalBlob = new Blob(mrChunks, { type: blobType });
+            finalObjectUrl = URL.createObjectURL(finalBlob);
+            finalDataUrl = await this.blobToDataUrl(finalBlob);
+
+            try {
+              const arrayBuf = await finalBlob.arrayBuffer();
+              finalAudioBuffer = await new Promise((res) => {
+                ctx.decodeAudioData(
+                  arrayBuf.slice(0),
+                  (buf) => res(buf),
+                  () => res(null)
+                );
+              });
+            } catch (decErr) {
+              console.warn('Error decoding MediaRecorder blob:', decErr);
+            }
+          }
+
+          // Priority 2: Use ScriptProcessor PCM WAV if MediaRecorder had no chunks or decode failed
+          if ((!finalAudioBuffer || finalBlob?.size === 0) && totalPcmSamples > 0) {
+            const merged = new Float32Array(totalPcmSamples);
+            let offset = 0;
+            for (let i = 0; i < pcmChunks.length; i++) {
+              merged.set(pcmChunks[i], offset);
+              offset += pcmChunks[i].length;
+            }
+            const sRate = ctx.sampleRate || 44100;
+            const pcmWav = this.float32ToWav(merged, sRate);
+            finalBlob = pcmWav;
+            finalObjectUrl = URL.createObjectURL(pcmWav);
+            finalDataUrl = await this.blobToDataUrl(pcmWav);
+
+            const pcmBuffer = ctx.createBuffer(1, Math.max(1, merged.length), sRate);
+            pcmBuffer.getChannelData(0).set(merged);
+            finalAudioBuffer = pcmBuffer;
+          }
+
+          // Absolute fallback if silence captured
+          if (!finalAudioBuffer) {
+            const sRate = ctx.sampleRate || 44100;
+            finalAudioBuffer = ctx.createBuffer(1, sRate, sRate);
+          }
 
           resolve({
-            blob: wavBlob,
-            objectUrl: recordedUrl,
-            recordedUrl,
-            dataUrl,
-            audioBuffer,
-            duration: audioBuffer.duration
+            blob: finalBlob,
+            objectUrl: finalObjectUrl,
+            recordedUrl: finalObjectUrl,
+            dataUrl: finalDataUrl,
+            audioBuffer: finalAudioBuffer,
+            duration: finalAudioBuffer.duration || (durationMs / 1000)
           });
         }, durationMs);
 

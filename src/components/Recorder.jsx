@@ -19,6 +19,8 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
     recordedSoundIdRef.current = soundKey;
 
     let isMounted = true;
+    audioEngine.unlockAudioContext();
+
     // Hard-cap recording duration strictly to max 6.0 seconds
     const durationMs = Math.min(6000, Math.max(1500, Math.ceil((sound?.duration || 3.5) * 1000)));
 
@@ -27,34 +29,47 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         setIsCapturing(true);
         soundSynthesizer.playUiSound('go');
 
-        // Draw live audio waveform on canvas
+        // 1. Immediately acquire active microphone stream & setup analyser for live visualizer
+        const stream = await audioEngine.initMic();
+        const liveAnalyser = audioEngine.setupAnalyser(stream);
+
+        // 2. Start live visualizer on canvas immediately
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
           const renderVisualizer = () => {
             if (!isMounted) return;
-            const analyser = audioEngine.analyser;
-            if (analyser && canvas) {
-              const bufferLength = analyser.frequencyBinCount;
-              const dataArray = new Uint8Array(bufferLength);
-              analyser.getByteTimeDomainData(dataArray);
+            const currentAnalyser = audioEngine.analyser || liveAnalyser;
 
-              ctx.fillStyle = 'rgba(10, 15, 30, 0.4)';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(10, 15, 30, 0.45)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const centerY = canvas.height / 2;
+            let currentRms = 0;
+
+            if (currentAnalyser) {
+              const bufferLength = currentAnalyser.frequencyBinCount;
+              const dataArray = new Uint8Array(bufferLength);
+              currentAnalyser.getByteTimeDomainData(dataArray);
+
+              let sumSquares = 0;
+              for (let i = 0; i < bufferLength; i++) {
+                const norm = (dataArray[i] - 128) / 128.0;
+                sumSquares += norm * norm;
+              }
+              currentRms = Math.sqrt(sumSquares / bufferLength);
 
               ctx.lineWidth = 3;
-              ctx.strokeStyle = micVolume > 0.08 ? '#06b6d4' : '#fbbf24'; // Cyan on speech, gold idle
+              ctx.strokeStyle = currentRms > 0.02 ? '#06b6d4' : '#fbbf24'; // Cyan on speech, gold idle
               ctx.beginPath();
 
               const sliceWidth = (canvas.width * 1.0) / bufferLength;
-              const centerY = canvas.height / 2;
               let x = 0;
 
               for (let i = 0; i < bufferLength; i++) {
-                // Normalized delta from center: -1.0 to 1.0
                 const norm = (dataArray[i] - 128) / 128.0;
-                // Amplify vocal fluctuations by 5.5x so voice visibly animates the scope!
-                const amp = norm * 5.5;
+                // Strong vocal fluctuation multiplier (up to 7.0x) so vocal waves are prominently visible
+                const amp = norm * 7.0;
                 const y = Math.max(4, Math.min(canvas.height - 4, centerY + (amp * (centerY - 6))));
                 if (i === 0) {
                   ctx.moveTo(x, y);
@@ -63,30 +78,44 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
                 }
                 x += sliceWidth;
               }
-
+              ctx.stroke();
+            } else {
+              // Idle guideline
+              ctx.strokeStyle = '#fbbf24';
+              ctx.beginPath();
+              ctx.moveTo(0, centerY);
+              ctx.lineTo(canvas.width, centerY);
               ctx.stroke();
             }
+
+            if (isMounted) {
+              setMicVolume(Math.min(1.0, currentRms * 5.5));
+            }
+
             animFrameRef.current = requestAnimationFrame(renderVisualizer);
           };
           renderVisualizer();
         }
 
-        // Get reference audio buffer for acoustic comparison
-        const refBuffer = await soundSynthesizer.getReferenceAudioBuffer(sound);
+        // 3. Fetch reference audio buffer in parallel without blocking recording!
+        const refBufferPromise = soundSynthesizer.getReferenceAudioBuffer(sound).catch(() => null);
 
-        // Record user audio
+        // 4. Record user audio for durationMs
         const userRec = await audioEngine.recordAudio(durationMs, (volume) => {
-          if (isMounted) setMicVolume(volume);
+          if (isMounted) setMicVolume((v) => Math.max(v, volume));
         });
 
         if (!isMounted) return;
         setIsCapturing(false);
         setHasRecorded(true);
 
-        // Deterministic score recording against reference sound
+        // Await reference sound buffer for deterministic scoring
+        const refBuffer = await refBufferPromise;
+
+        // Score recording against target Egyptian sound
         const scoreResult = audioEngine.scoreRecording(userRec.audioBuffer, refBuffer);
 
-        // Submit to room with universal WAV data URL
+        // Submit to room with playable audio URL & data URL
         const recordedAudioUrl = userRec.objectUrl;
         const audioDataUrl = userRec.dataUrl;
 
@@ -104,15 +133,15 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         if (isMounted) {
           setMicError(err.message || 'Microphone error occurred');
           setIsCapturing(false);
-          // Deterministic fallback score for error state
+          // Fallback submission if permission was denied
           onSubmitRecording({
             recordedAudioUrl: null,
             audioDataUrl: null,
-            score: 15,
-            rhythmScore: 10,
-            pitchScore: 15,
-            energyScore: 15,
-            tier: audioEngine.getEgyptianRatingTier(15)
+            score: 25,
+            rhythmScore: 20,
+            pitchScore: 25,
+            energyScore: 30,
+            tier: audioEngine.getEgyptianRatingTier(25)
           });
         }
       }
@@ -128,7 +157,10 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   }, [sound, onSubmitRecording]);
 
   return (
-    <div className="w-full max-w-xl mx-auto px-3 py-4 text-center">
+    <div
+      onClick={() => audioEngine.unlockAudioContext()}
+      className="w-full max-w-xl mx-auto px-3 py-4 text-center cursor-pointer select-none"
+    >
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
         {/* Pulsing Header */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
