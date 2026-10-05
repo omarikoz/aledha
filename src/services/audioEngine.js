@@ -28,9 +28,19 @@ class AudioEngine {
     }
   }
 
+  // Check if active microphone stream is already established and live
+  isMicReady() {
+    if (!this.micStream || !this.micStream.active) return false;
+    const tracks = this.micStream.getAudioTracks ? this.micStream.getAudioTracks() : [];
+    return tracks.length > 0 && tracks.some((t) => t.readyState === 'live');
+  }
+
   // Request Microphone permissions & return stream (safe for iOS Safari & Android)
   async initMic() {
-    if (this.micStream && this.micStream.active) {
+    if (this.isMicReady()) {
+      try {
+        this.micStream.getAudioTracks().forEach((t) => { t.enabled = true; });
+      } catch (e) {}
       return this.micStream;
     }
     try {
@@ -639,8 +649,14 @@ class AudioEngine {
     }
   }
 
-  // Stop recording and release mic
+  // Stop recording but KEEP microphone stream active so the browser NEVER asks for permission again
   stopMic() {
+    // Keep this.micStream alive across all rounds!
+    this.analyser = null;
+  }
+
+  // Hard release only when leaving the page entirely
+  releaseMicHard() {
     if (this.micStream) {
       this.micStream.getTracks().forEach((track) => track.stop());
       this.micStream = null;

@@ -19,10 +19,30 @@ export default function App() {
   const [localRecordedAudioUrl, setLocalRecordedAudioUrl] = useState(null);
   const [isTesterOpen, setIsTesterOpen] = useState(false);
 
-  // iOS Web Audio Context unlocker: unlocks audio on first user touch/tap anywhere
+  const [micReady, setMicReady] = useState(() => audioEngine.isMicReady());
+
+  // Function to request microphone permission explicitly and unlock audio context
+  const handleRequestMic = async () => {
+    try {
+      audioEngine.unlockAudioContext();
+      await audioEngine.initMic();
+      setMicReady(true);
+      return true;
+    } catch (e) {
+      console.warn('Microphone permission request failed:', e);
+      return false;
+    }
+  };
+
+  // Request microphone access immediately on website load and unlock audio context
   useEffect(() => {
+    // 1. Pre-warm microphone permission immediately on site load
+    handleRequestMic();
+
+    // 2. Unlock AudioContext and re-check mic on first user touch/tap anywhere
     const unlock = () => {
       audioEngine.unlockAudioContext();
+      handleRequestMic();
     };
     window.addEventListener('touchstart', unlock, { passive: true });
     window.addEventListener('click', unlock, { passive: true });
@@ -179,6 +199,8 @@ export default function App() {
       <Header
         room={room}
         player={player}
+        micReady={micReady}
+        onRequestMic={handleRequestMic}
         onOpenSoundTester={() => setIsTesterOpen(true)}
       />
 
@@ -188,6 +210,8 @@ export default function App() {
           <Lobby
             room={room}
             player={player}
+            micReady={micReady}
+            onRequestMic={handleRequestMic}
             onCreateRoom={handleCreateRoom}
             onJoinRoom={handleJoinRoom}
             onStartGame={handleStartGame}

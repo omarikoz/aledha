@@ -11,11 +11,12 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   const [micError, setMicError] = useState(null);
   const canvasRef = useRef(null);
   const animFrameRef = useRef(null);
-  const recordedOnceRef = useRef(false);
+  const recordedSoundIdRef = useRef(null);
 
   useEffect(() => {
-    if (recordedOnceRef.current) return;
-    recordedOnceRef.current = true;
+    const soundKey = sound?.id || sound?.name || `round-sound-${timer}`;
+    if (recordedSoundIdRef.current === soundKey) return;
+    recordedSoundIdRef.current = soundKey;
 
     let isMounted = true;
     // Hard-cap recording duration strictly to max 6.0 seconds

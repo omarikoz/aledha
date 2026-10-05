@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Volume2, Users, Copy, Check, Sparkles, Music } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
-export default function Header({ room, player, onOpenSoundTester }) {
+export default function Header({ room, player, micReady, onRequestMic, onOpenSoundTester }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyCode = () => {
@@ -57,18 +57,25 @@ export default function Header({ room, player, onOpenSoundTester }) {
       )}
 
       {/* Right Controls */}
-      <div className="flex items-center gap-2.5">
-        {/* Sound Packs & Library hidden via feature flag */}
-        {false && (
+      <div className="flex items-center gap-2">
+        {micReady ? (
+          <span
+            title="Microphone is allowed and ready for all rounds"
+            className="hidden sm:inline-flex items-center gap-1.5 bg-slate-900/90 border-2 border-black px-2.5 py-1.5 rounded-xl shadow-[2px_2px_0px_#000] text-xs font-bold text-emerald-400"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>🎙️ Mic Ready</span>
+          </span>
+        ) : (
           <button
             onClick={() => {
               soundSynthesizer.playUiSound('click');
-              onOpenSoundTester();
+              onRequestMic && onRequestMic();
             }}
-            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border-2 border-black px-3 py-1.5 rounded-xl shadow-[2px_2px_0px_#000] text-xs font-bold transition"
+            title="Tap to allow microphone access for all rounds"
+            className="inline-flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 border-2 border-amber-400 text-amber-300 px-2.5 py-1.5 rounded-xl shadow-[2px_2px_0px_#000] text-xs font-black transition animate-pulse active:scale-95"
           >
-            <Music size={15} />
-            <span className="hidden md:inline">Sound Library</span>
+            <span>🎙️ Allow Mic</span>
           </button>
         )}
 

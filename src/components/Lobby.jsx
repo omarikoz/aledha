@@ -23,6 +23,8 @@ const FUNNY_NAMES = [
 export default function Lobby({
   room,
   player,
+  micReady,
+  onRequestMic,
   onCreateRoom,
   onJoinRoom,
   onStartGame,
@@ -73,9 +75,44 @@ export default function Lobby({
           <h2 className="text-2xl sm:text-3xl font-black text-white mb-1 tracking-tight">
             Ready to Play with Friends?!
           </h2>
-          <p className="text-slate-300 text-xs sm:text-sm mb-4 px-2">
+          <p className="text-slate-300 text-xs sm:text-sm mb-3 px-2">
             Listen to iconic Egyptian sounds, say them into your mic, and see who did the best sound!
           </p>
+
+          {/* Persistent Microphone Status Banner (Always Allow for all rounds) */}
+          {!micReady ? (
+            <div
+              onClick={() => {
+                soundSynthesizer.playUiSound('click');
+                onRequestMic && onRequestMic();
+              }}
+              className="mb-4 p-3 bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-transparent border-2 border-amber-400 rounded-2xl flex items-center justify-between cursor-pointer transition shadow-[3px_3px_0px_#fbbf24] hover:scale-[1.01] active:scale-95 group text-left"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl animate-bounce">🎙️</span>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
+                    <span>Allow Microphone Access</span>
+                    <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.2 rounded font-black">TAP HERE</span>
+                  </h4>
+                  <p className="text-[11px] text-amber-200/90 font-semibold">
+                    Always allow mic access so rounds record without popups!
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3 pointer-events-none"
+              >
+                Allow 🎤
+              </button>
+            </div>
+          ) : (
+            <div className="mb-4 py-2 px-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-center gap-2 text-[11px] sm:text-xs font-bold text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Microphone Allowed & Active for All Rounds ✅</span>
+            </div>
+          )}
 
           {/* Player Name Input */}
           <div className="mb-4 text-left">
@@ -378,6 +415,7 @@ export default function Lobby({
             <button
               onClick={() => {
                 soundSynthesizer.playUiSound('go');
+                onRequestMic && onRequestMic();
                 audioEngine.initMic().catch(() => {});
                 onStartGame();
               }}
