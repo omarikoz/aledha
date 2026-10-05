@@ -31,9 +31,10 @@ export default function RevealScreen({
 
   // Resolve audio source: Human mic blob/dataUrl vs Bot procedural mimic
   const isCurrentUser = currentRec?.playerId === player?.id;
-  const humanAudioSource = isCurrentUser
-    ? (localRecordedAudioUrl || currentRec?.recordedAudioUrl || currentRec?.audioDataUrl)
-    : (currentRec?.recordedAudioUrl || currentRec?.audioDataUrl);
+  const isAI = Boolean(currentRec?.isBot || currentRec?.isAI);
+  const humanAudioSource = (isCurrentUser && localRecordedAudioUrl)
+    || currentRec?.recordedAudioUrl
+    || currentRec?.audioDataUrl;
 
   // Auto-play contestant's recorded audio & start step countdown
   useEffect(() => {
@@ -49,27 +50,33 @@ export default function RevealScreen({
     }
 
     if (currentRec) {
-      soundSynthesizer.playUiSound('fanfare');
-
-      if (!currentRec.isBot && humanAudioSource) {
-        // Human player: strictly play their recorded mic capture!
+      if (!isAI && humanAudioSource) {
+        // Human player: strictly play their recorded mic capture directly!
         try {
           const audio = new Audio(humanAudioSource);
+          audio.volume = 1.0;
+          audio.muted = false;
           audioRef.current = audio;
           setIsPlayingAudio(true);
 
-          audio.play().catch((e) => {
-            console.warn('Playback error on recorded audio:', e);
-            setIsPlayingAudio(false);
-          });
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((e) => {
+              console.warn('Playback error on recorded audio (likely user gesture needed):', e);
+              setIsPlayingAudio(false);
+            });
+          }
 
           audio.onended = () => setIsPlayingAudio(false);
-          audio.onerror = () => setIsPlayingAudio(false);
+          audio.onerror = (err) => {
+            console.warn('Audio onerror on recorded mic source:', err);
+            setIsPlayingAudio(false);
+          };
         } catch (e) {
           console.warn('Failed to initialize Audio for mic recording:', e);
           setIsPlayingAudio(false);
         }
-      } else if (currentRec.isBot) {
+      } else if (isAI) {
         // AI Bot: strictly procedural mimic synthesis (never plays the clean reference sound!)
         setIsPlayingAudio(true);
         soundSynthesizer.playBotMimic(sound, currentRec, () => setIsPlayingAudio(false));
@@ -105,7 +112,7 @@ export default function RevealScreen({
       }
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [revealIndex, currentRec?.playerId, humanAudioSource, isHost, onNextRevealStep, totalStepDuration]);
+  }, [revealIndex, currentRec?.playerId, humanAudioSource, isAI, isHost, onNextRevealStep, totalStepDuration]);
 
   // Replay contestant vocal take
   const handleTogglePlay = () => {
@@ -117,13 +124,19 @@ export default function RevealScreen({
       }
       setIsPlayingAudio(false);
     } else {
-      if (!currentRec?.isBot && humanAudioSource) {
+      if (!isAI && humanAudioSource) {
         const audio = new Audio(humanAudioSource);
+        audio.volume = 1.0;
+        audio.muted = false;
         audioRef.current = audio;
         setIsPlayingAudio(true);
-        audio.play().catch(() => setIsPlayingAudio(false));
+        const p = audio.play();
+        if (p !== undefined) {
+          p.catch(() => setIsPlayingAudio(false));
+        }
         audio.onended = () => setIsPlayingAudio(false);
-      } else if (currentRec?.isBot) {
+        audio.onerror = () => setIsPlayingAudio(false);
+      } else if (isAI) {
         setIsPlayingAudio(true);
         soundSynthesizer.playBotMimic(sound, currentRec, () => setIsPlayingAudio(false));
       }

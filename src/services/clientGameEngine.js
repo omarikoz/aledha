@@ -1,9 +1,18 @@
 // Client-Side Game Engine for "Aledha"
 // Enables 100% full gameplay (Play vs AI / Solo Practice) on static hosts like GitHub Pages
-// Runs without requiring a Node.js server!
+// Runs cleanly without requiring a Node.js server!
 
 import soundsCatalog from '../data/sounds.json';
 import { audioEngine } from './audioEngine.js';
+
+const ROOM_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function generateRoomCode() {
+  let code = '';
+  for (let i = 0; i < 4; i++) {
+    code += ROOM_CHARS.charAt(Math.floor(Math.random() * ROOM_CHARS.length));
+  }
+  return code;
+}
 
 const BOT_TEMPLATES = [
   {
@@ -70,56 +79,64 @@ class ClientGameEngine {
   broadcast() {
     if (!this.room) return;
     const cloned = JSON.parse(JSON.stringify(this.room));
-    // Re-attach non-serializable properties if any
     for (const listener of this.listeners) {
       listener(cloned);
     }
   }
 
-  // Create Solo Practice Room (1 Human + 2 Egyptian Bots)
-  createSoloRoom({ playerName, avatar, character }) {
+  // Create Room (Host Game / Solo Practice) - NEVER auto-starts! Stays in Lobby view.
+  createRoom({ playerName, avatar, character, isSolo = false }) {
     this.cleanup();
 
     const hostId = 'local_player';
+    const roomId = generateRoomCode();
+
     this.humanPlayer = {
       id: hostId,
-      name: playerName || 'Player (المعلم)',
+      name: playerName || 'The Host (المعلم)',
       avatar: avatar || character?.avatar || '👑',
       character: character || null,
       recordedAudioUrl: null,
       score: 0,
       lastRoundScore: 0,
       isHost: true,
-      isBot: false
+      isBot: false,
+      isAI: false
     };
 
-    // Pick 2 distinct bots
-    const shuffledBots = [...BOT_TEMPLATES].sort(() => 0.5 - Math.random());
-    const bot1 = {
-      id: 'bot_1',
-      name: shuffledBots[0].name,
-      avatar: shuffledBots[0].avatar,
-      character: shuffledBots[0].character,
-      personality: shuffledBots[0].personality,
-      score: 0,
-      lastRoundScore: 0,
-      isHost: false,
-      isBot: true
-    };
-    const bot2 = {
-      id: 'bot_2',
-      name: shuffledBots[1].name,
-      avatar: shuffledBots[1].avatar,
-      character: shuffledBots[1].character,
-      personality: shuffledBots[1].personality,
-      score: 0,
-      lastRoundScore: 0,
-      isHost: false,
-      isBot: true
-    };
+    const players = [this.humanPlayer];
+
+    // If solo, add 2 Egyptian bots so the player has immediate opponents
+    if (isSolo) {
+      const shuffledBots = [...BOT_TEMPLATES].sort(() => 0.5 - Math.random());
+      players.push({
+        id: 'bot_1',
+        name: shuffledBots[0].name,
+        avatar: shuffledBots[0].avatar,
+        character: shuffledBots[0].character,
+        personality: shuffledBots[0].personality,
+        score: 0,
+        lastRoundScore: 0,
+        isHost: false,
+        isBot: true,
+        isAI: true
+      });
+      players.push({
+        id: 'bot_2',
+        name: shuffledBots[1].name,
+        avatar: shuffledBots[1].avatar,
+        character: shuffledBots[1].character,
+        personality: shuffledBots[1].personality,
+        score: 0,
+        lastRoundScore: 0,
+        isHost: false,
+        isBot: true,
+        isAI: true
+      });
+    }
 
     this.room = {
-      id: 'SOLO',
+      id: roomId,
       hostId,
       state: 'LOBBY',
       settings: {
@@ -130,20 +147,54 @@ class ClientGameEngine {
       currentRound: 1,
       totalRounds: 3,
       roundSound: null,
-      players: [this.humanPlayer, bot1, bot2],
+      players,
       recordings: [],
       revealIndex: 0,
       timer: 0
     };
 
+    // Stays in LOBBY! No setTimeout, no auto-start.
     this.broadcast();
+    return { success: true, roomId, player: this.humanPlayer };
+  }
 
-    // Auto-start match after brief lobby preview
-    setTimeout(() => {
-      this.startGame();
-    }, 600);
+  // Backward compatibility alias
+  createSoloRoom(params) {
+    return this.createRoom({ ...params, isSolo: true });
+  }
 
-    return { success: true, roomId: 'SOLO', player: this.humanPlayer };
+  addBot() {
+    if (!this.room || this.room.players.length >= 8) return;
+    const existingNames = this.room.players.map(p => p.name);
+    const availableBots = BOT_TEMPLATES.filter(b => !existingNames.includes(b.name));
+    const chosen = availableBots.length > 0 ? availableBots[0] : BOT_TEMPLATES[Math.floor(Math.random() * BOT_TEMPLATES.length)];
+    const newBot = {
+      id: `bot_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: chosen.name,
+      avatar: chosen.avatar,
+      character: chosen.character,
+      personality: chosen.personality,
+      score: 0,
+      lastRoundScore: 0,
+      isHost: false,
+      isBot: true,
+      isAI: true
+    };
+    this.room.players.push(newBot);
+    this.broadcast();
+  }
+
+  removeBot(botId) {
+    if (!this.room) return;
+    this.room.players = this.room.players.filter(p => p.id !== botId);
+    this.broadcast();
+  }
+
+  updateSettings(settings) {
+    if (!this.room) return;
+    this.room.settings = { ...this.room.settings, ...settings };
+    this.room.totalRounds = this.room.settings.rounds || 3;
+    this.broadcast();
   }
 
   startGame() {
@@ -159,23 +210,26 @@ class ClientGameEngine {
   startRound() {
     this.cleanup();
 
-    // Pick random sound from catalog
-    const sound = soundsCatalog[Math.floor(Math.random() * soundsCatalog.length)];
+    const filtered = this.room.settings?.category === 'all'
+      ? soundsCatalog
+      : soundsCatalog.filter(s => s.category === this.room.settings.category);
+    const pool = filtered.length > 0 ? filtered : soundsCatalog;
+    const sound = pool[Math.floor(Math.random() * pool.length)];
+
     this.room.roundSound = sound;
     this.room.recordings = [];
     this.room.revealIndex = 0;
     this.room.state = 'COUNTDOWN';
     this.broadcast();
 
-    // 1. Countdown 3 seconds
+    // 1. Countdown 3 seconds ("Get Ready")
     this.runCountdown(3, 'SOUND', () => {
       // 2. Play Target Sound (Max 6s)
       const soundDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
       this.runCountdown(soundDuration, 'RECORDING', () => {
-        // 3. Recording Window (Max 6s)
+        // 3. Recording Window ("MIMIC IT NOW") (Max 6s)
         const recordDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
         this.runCountdown(recordDuration, 'PROCESSING', () => {
-          // Transition to reveal
           setTimeout(() => {
             this.completeRound();
           }, 800);
@@ -222,6 +276,7 @@ class ClientGameEngine {
       avatar: this.humanPlayer.avatar,
       character: this.humanPlayer.character,
       isBot: false,
+      isAI: false,
       recordedAudioUrl: audioUrl,
       audioDataUrl: audioUrl,
       score: recordingData.score,
@@ -238,7 +293,6 @@ class ClientGameEngine {
       this.room.recordings.push(recEntry);
     }
 
-    // Immediately process round
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.completeRound();
   }
@@ -256,29 +310,33 @@ class ClientGameEngine {
         avatar: this.humanPlayer.avatar,
         character: this.humanPlayer.character,
         isBot: false,
-        recordedAudioUrl: null,
+        isAI: false,
+        recordedAudioUrl: this.humanPlayer.recordedAudioUrl || null,
         audioDataUrl: null,
-        score: 35,
-        rhythmScore: 30,
-        pitchScore: 35,
-        energyScore: 40,
-        tier: audioEngine.getEgyptianRatingTier(35)
+        score: 30,
+        rhythmScore: 25,
+        pitchScore: 30,
+        energyScore: 35,
+        tier: audioEngine.getEgyptianRatingTier(30)
       });
     }
 
     // Generate Bot attempts
-    const bots = this.room.players.filter(p => p.isBot);
+    const bots = this.room.players.filter(p => p.isBot || p.isAI);
     for (const bot of bots) {
       const alreadyHas = this.room.recordings.some(r => r.playerId === bot.id);
       if (!alreadyHas) {
-        let baseScore = 60;
-        if (bot.personality === 'pro') baseScore = 75 + Math.floor(Math.random() * 20);
-        else if (bot.personality === 'wild') baseScore = 20 + Math.floor(Math.random() * 45);
-        else baseScore = 45 + Math.floor(Math.random() * 35);
+        let baseScore = 55;
+        if (bot.personality === 'pro') baseScore = 80;
+        else if (bot.personality === 'wild') baseScore = 65;
+        else baseScore = 40;
 
-        const rhythmScore = Math.max(10, Math.min(99, baseScore + Math.floor((Math.random() - 0.5) * 16)));
-        const pitchScore = Math.max(10, Math.min(99, baseScore + Math.floor((Math.random() - 0.5) * 16)));
-        const energyScore = Math.max(10, Math.min(99, baseScore + Math.floor((Math.random() - 0.5) * 16)));
+        const variance = Math.floor(Math.random() * 21) - 10;
+        const score = Math.max(15, Math.min(96, baseScore + variance));
+
+        const rhythmScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 12) - 6));
+        const pitchScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 12) - 6));
+        const energyScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 12) - 6));
 
         this.room.recordings.push({
           playerId: bot.id,
@@ -286,13 +344,14 @@ class ClientGameEngine {
           avatar: bot.avatar,
           character: bot.character,
           isBot: true,
+          isAI: true,
           recordedAudioUrl: null,
           audioDataUrl: null,
-          score: baseScore,
+          score,
           rhythmScore,
           pitchScore,
           energyScore,
-          tier: audioEngine.getEgyptianRatingTier(baseScore)
+          tier: audioEngine.getEgyptianRatingTier(score)
         });
       }
     }

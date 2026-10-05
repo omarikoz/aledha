@@ -3,59 +3,67 @@
 export function getEgyptianTier(score) {
   if (score >= 90) {
     return {
-      badge: "Flawless Carbon Copy! 🔥",
-      badgeAr: "نسخة طبق الأصل!",
-      color: "#10B981",
-      reaction: "Bro is a walking foley artist! You matched the Egyptian sound with 100% precision!",
+      badge: "عالمي! جابها في الجون 🔥",
+      badgeEn: "World-Class! Hit the Target! 🔥",
+      color: "#10B981", // Emerald
+      reaction: "عالمي! جابها في الجون بالمللي أداء محترفين 🔥",
       soundTag: "legendary"
     };
-  } else if (score >= 70) {
+  } else if (score >= 75) {
     return {
-      badge: "Absolute Fire! 👌",
-      badgeAr: "جامد فشخ!",
-      color: "#3B82F6",
-      reaction: "Incredible mimicry! You're just a tiny whisper away from the original recording.",
+      badge: "رايق أوي! قريب فشخ 👌",
+      badgeEn: "Super Smooth! Incredibly Close! 👌",
+      color: "#3B82F6", // Blue
+      reaction: "رايق أوي! قريب فشخ من الصوت الأصلي 👌",
       soundTag: "great"
     };
-  } else if (score >= 40) {
+  } else if (score >= 50) {
     return {
-      badge: "Not bad, try again! 😂",
-      badgeAr: "مش بطال، بس حاول تاني",
-      color: "#F59E0B",
-      reaction: "The spirit was there, but your vocal cords took an unexpected detour!",
+      badge: "مش بطال، سامع المحاولة 👏",
+      badgeEn: "Not Bad, We Hear The Effort! 👏",
+      color: "#F59E0B", // Amber
+      reaction: "مش بطال، سامع المحاولة والروح كانت عالية 👏",
       soundTag: "okay"
+    };
+  } else if (score >= 25) {
+    return {
+      badge: "محتاجة شوية تظبيط بس ضحكتنا 😂",
+      badgeEn: "Needs A Little Tuning, But Great Laughs! 😂",
+      color: "#FB923C", // Orange
+      reaction: "محتاجة شوية تظبيط بس ضحكتنا وملت الجو بهجة 😂",
+      soundTag: "funny"
     };
   } else {
     return {
-      badge: "What on earth was that?! 💀",
-      badgeAr: "إيه ده يا فنان؟! ودني ولعت!",
-      color: "#EF4444",
-      reaction: "My ears need immediate medical attention! That was more of a noise violation than mimicry!",
-      soundTag: "fail"
+      badge: "المهم المشاركة والروح الرياضية! 🤝",
+      badgeEn: "Good Sportsmanship! 🤝",
+      color: "#64748B", // Slate
+      reaction: "المهم المشاركة والروح الرياضية والضحكة الحلوة! 🤝",
+      soundTag: "sportsmanship"
     };
   }
 }
 
 // Generate realistic simulated bot recordings & scores for Solo/Party play
 export function generateBotAttempt(bot, soundItem) {
-  // Skill variance based on bot personality
   let baseScore = 50;
   if (bot.personality === 'pro') baseScore = 80;
-  if (bot.personality === 'funny') baseScore = 35;
+  if (bot.personality === 'funny') baseScore = 40;
   if (bot.personality === 'wild') baseScore = 65;
 
-  const variance = Math.floor(Math.random() * 26) - 10;
-  const score = Math.max(15, Math.min(98, baseScore + variance));
+  const variance = Math.floor(Math.random() * 21) - 10;
+  const score = Math.max(15, Math.min(96, baseScore + variance));
 
-  const rhythmScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 16) - 8));
-  const pitchScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 16) - 8));
-  const energyScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 16) - 8));
+  const rhythmScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 12) - 6));
+  const pitchScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 12) - 6));
+  const energyScore = Math.max(10, Math.min(100, score + Math.floor(Math.random() * 12) - 6));
 
   return {
     playerId: bot.id,
     playerName: bot.name,
     avatar: bot.avatar,
     isBot: true,
+    isAI: true,
     score,
     rhythmScore,
     pitchScore,

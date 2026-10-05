@@ -53,7 +53,7 @@ class AudioEngine {
     return analyser;
   }
 
-  // Record audio for durationMs with live volume callbacks using direct Web Audio PCM
+  // Record audio for durationMs using browser MediaRecorder directly
   recordAudio(durationMs, onVolumeUpdate) {
     return new Promise(async (resolve, reject) => {
       try {
@@ -63,6 +63,7 @@ class AudioEngine {
           await ctx.resume();
         }
 
+        // Live visualizer analyser
         const source = ctx.createMediaStreamSource(stream);
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 512;
@@ -71,42 +72,29 @@ class AudioEngine {
         this.analyser = analyser;
 
         let isRecording = true;
-        const pcmChunks = [];
-        const bufferSize = 4096;
+        const chunks = [];
 
-        // ScriptProcessorNode captures raw Float32 PCM samples directly from the microphone
-        const scriptNode = ctx.createScriptProcessor ? ctx.createScriptProcessor(bufferSize, 1, 1) : null;
-        const silentGain = ctx.createGain();
-        silentGain.gain.setValueAtTime(0, ctx.currentTime);
-
-        if (scriptNode) {
-          scriptNode.onaudioprocess = (e) => {
-            if (!isRecording) return;
-            const input = e.inputBuffer.getChannelData(0);
-            pcmChunks.push(new Float32Array(input));
-          };
-          source.connect(scriptNode);
-          scriptNode.connect(silentGain);
-          silentGain.connect(ctx.destination);
+        // Determine best supported mime type
+        let mimeType = 'audio/webm';
+        if (typeof MediaRecorder !== 'undefined') {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          }
         }
 
-        // Parallel MediaRecorder as safety backup
-        let mediaRecorder = null;
-        const mrChunks = [];
-        try {
-          const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus'
-            : 'audio/webm';
-          mediaRecorder = new MediaRecorder(stream, { mimeType });
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) mrChunks.push(e.data);
-          };
-          mediaRecorder.start(50);
-        } catch (mrErr) {
-          console.warn('MediaRecorder init fallback:', mrErr);
-        }
+        const mediaRecorder = new MediaRecorder(stream, { mimeType });
 
-        // Live real-time volume analysis loop
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        // Live real-time volume detection
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
         const volumeCheckInterval = setInterval(() => {
           if (!isRecording) return;
@@ -122,78 +110,44 @@ class AudioEngine {
           }
         }, 30);
 
-        // Finalize function called when recording time ends
-        const finalizeRecording = async () => {
-          if (!isRecording) return;
-          isRecording = false;
+        mediaRecorder.onstop = async () => {
           clearInterval(volumeCheckInterval);
+          isRecording = false;
 
-          if (mediaRecorder && mediaRecorder.state === 'recording') {
-            try {
-              mediaRecorder.requestData();
-              mediaRecorder.stop();
-            } catch (e) {}
+          const audioBlob = new Blob(chunks, { type: mimeType });
+          const recordedUrl = URL.createObjectURL(audioBlob);
+          const dataUrl = await this.blobToDataUrl(audioBlob);
+
+          let audioBuffer = null;
+          try {
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+          } catch (decodeErr) {
+            console.warn('Could not decode audioBuffer from recorded blob:', decodeErr);
           }
 
-          if (scriptNode) {
-            try {
-              source.disconnect(scriptNode);
-              scriptNode.disconnect(silentGain);
-              silentGain.disconnect(ctx.destination);
-            } catch (e) {}
-          }
-
-          // 1. Preferred Route: Raw PCM Float32 samples collected directly from microphone
-          if (pcmChunks.length > 0) {
-            const totalSamples = pcmChunks.reduce((acc, c) => acc + c.length, 0);
-            const mergedFloat32 = new Float32Array(totalSamples);
-            let offset = 0;
-            for (const chunk of pcmChunks) {
-              mergedFloat32.set(chunk, offset);
-              offset += chunk.length;
-            }
-
-            const sampleRate = ctx.sampleRate || 44100;
-            const audioBuffer = ctx.createBuffer(1, totalSamples, sampleRate);
-            audioBuffer.copyToChannel(mergedFloat32, 0);
-
-            // Convert to 100% compliant, standard 16-bit PCM WAV Blob
-            const wavBlob = this.float32ToWav(mergedFloat32, sampleRate);
-            const dataUrl = await this.blobToDataUrl(wavBlob);
-
-            resolve({
-              blob: wavBlob,
-              dataUrl,
-              audioBuffer,
-              duration: totalSamples / sampleRate
-            });
-            return;
-          }
-
-          // 2. Fallback Route: MediaRecorder Blob
-          if (mrChunks.length > 0) {
-            const rawBlob = new Blob(mrChunks, { type: 'audio/webm' });
-            const dataUrl = await this.blobToDataUrl(rawBlob);
-            resolve({
-              blob: rawBlob,
-              dataUrl,
-              audioBuffer: null,
-              duration: durationMs / 1000
-            });
-            return;
-          }
-
-          // 3. Empty fallback
           resolve({
-            blob: null,
-            dataUrl: null,
-            audioBuffer: null,
-            duration: 0
+            blob: audioBlob,
+            objectUrl: recordedUrl,
+            recordedUrl: recordedUrl,
+            dataUrl,
+            audioBuffer,
+            duration: audioBuffer ? audioBuffer.duration : (durationMs / 1000)
           });
         };
 
+        mediaRecorder.start(50);
+
+        // Auto-stop after durationMs
         setTimeout(() => {
-          finalizeRecording();
+          if (mediaRecorder.state === 'recording') {
+            try {
+              mediaRecorder.requestData();
+              mediaRecorder.stop();
+            } catch (stopErr) {
+              console.warn('Error stopping mediaRecorder:', stopErr);
+            }
+          }
         }, durationMs);
 
       } catch (err) {
@@ -475,46 +429,102 @@ class AudioEngine {
     return res;
   }
 
-  // Full Comparison Engine: Returns Score (0-100), sub-scores, and Egyptian comedic tier
+  // Detect vocal activity boundaries (sound onset and offset)
+  detectSoundBounds(envelope) {
+    if (!envelope || envelope.length === 0) {
+      return { startRatio: 0, durationRatio: 0 };
+    }
+    const threshold = 0.04;
+    let startIdx = 0;
+    let endIdx = envelope.length - 1;
+
+    for (let i = 0; i < envelope.length; i++) {
+      if (envelope[i] >= threshold) {
+        startIdx = i;
+        break;
+      }
+    }
+    for (let i = envelope.length - 1; i >= 0; i--) {
+      if (envelope[i] >= threshold) {
+        endIdx = i;
+        break;
+      }
+    }
+    const len = Math.max(1, envelope.length);
+    return {
+      startRatio: startIdx / len,
+      durationRatio: Math.max(0.05, (endIdx - startIdx) / len)
+    };
+  }
+
+  // Full Deterministic Comparison Engine: Returns Score (0-100), sub-scores, and clean Egyptian tier
   scoreRecording(userAudioBuffer, refAudioBuffer) {
     if (!userAudioBuffer || userAudioBuffer.length === 0) {
       return {
-        totalScore: 15,
+        totalScore: 10,
         rhythmScore: 10,
-        pitchScore: 15,
-        energyScore: 20,
-        tier: this.getEgyptianRatingTier(15)
+        pitchScore: 10,
+        energyScore: 10,
+        tier: this.getEgyptianRatingTier(10)
       };
     }
 
     // 1. Preprocess both audio streams
     const userSamples = this.preprocessAudio(userAudioBuffer);
-    const refSamples = this.preprocessAudio(refAudioBuffer);
+    const refSamples = refAudioBuffer ? this.preprocessAudio(refAudioBuffer) : null;
 
     // 2. Extract Acoustic Features
     const userFeats = this.extractFeatures(userSamples);
-    const refFeats = this.extractFeatures(refSamples);
+    const refFeats = refSamples ? this.extractFeatures(refSamples) : null;
 
-    // 3. RMS / Rhythm Match (40% weight)
-    const rmsDistance = this.computeDtwDistance(userFeats.rmsEnvelope, refFeats.rmsEnvelope);
-    // Convert distance to similarity percentage
-    const rhythmScore = Math.max(0, Math.min(100, Math.round((1 - Math.min(1, rmsDistance * 2.2)) * 100)));
+    // Check if user made actual sound (silence detection)
+    let maxUserRms = 0;
+    for (let i = 0; i < userFeats.rmsEnvelope.length; i++) {
+      if (userFeats.rmsEnvelope[i] > maxUserRms) maxUserRms = userFeats.rmsEnvelope[i];
+    }
 
-    // 4. Pitch / Spectral Centroid Contour Match (40% weight)
-    // Normalize centroid arrays
-    const normUserCentroids = this.normalizeCentroids(userFeats.spectralCentroids);
-    const normRefCentroids = this.normalizeCentroids(refFeats.spectralCentroids);
-    const centroidDistance = this.computeDtwDistance(normUserCentroids, normRefCentroids);
-    const pitchScore = Math.max(0, Math.min(100, Math.round((1 - Math.min(1, centroidDistance * 2.0)) * 100)));
+    if (maxUserRms < 0.012) {
+      // User was silent or muted mic
+      return {
+        totalScore: 12,
+        rhythmScore: 10,
+        pitchScore: 10,
+        energyScore: 15,
+        tier: this.getEgyptianRatingTier(12)
+      };
+    }
 
-    // 5. Spectral Flatness / Energy Match (20% weight)
-    const flatnessDiff = Math.abs(userFeats.avgFlatness - refFeats.avgFlatness);
-    const energyScore = Math.max(0, Math.min(100, Math.round((1 - Math.min(1, flatnessDiff * 3.0)) * 100)));
+    let rhythmScore = 65;
+    let timingScore = 60;
+    let pitchScore = 60;
 
-    // Weighted Overall Score
-    let totalScore = Math.round((rhythmScore * 0.40) + (pitchScore * 0.40) + (energyScore * 0.20));
-    // Apply a light party-friendly game boost curve (so players stay laughing and competitive)
-    totalScore = Math.min(100, Math.max(12, Math.round(totalScore * 0.95 + 8)));
+    if (refFeats) {
+      // 1. Volume / Energy Profile (RMS) Match (40% weight)
+      const rmsDistance = this.computeDtwDistance(userFeats.rmsEnvelope, refFeats.rmsEnvelope);
+      rhythmScore = Math.max(0, Math.min(100, Math.round((1 - Math.min(1, rmsDistance * 2.0)) * 100)));
+
+      // 2. Duration & Timing Match (30% weight)
+      const userOnset = this.detectSoundBounds(userFeats.rmsEnvelope);
+      const refOnset = this.detectSoundBounds(refFeats.rmsEnvelope);
+      const onsetDiff = Math.abs(userOnset.startRatio - refOnset.startRatio);
+      const durationDiff = Math.abs(userOnset.durationRatio - refOnset.durationRatio);
+      const timingDist = (onsetDiff * 0.5) + (durationDiff * 0.5);
+      timingScore = Math.max(0, Math.min(100, Math.round((1 - Math.min(1, timingDist * 2.2)) * 100)));
+
+      // 3. Pitch / Spectral Centroid Frequency Match (30% weight)
+      const normUserCentroids = this.normalizeCentroids(userFeats.spectralCentroids);
+      const normRefCentroids = this.normalizeCentroids(refFeats.spectralCentroids);
+      const centroidDistance = this.computeDtwDistance(normUserCentroids, normRefCentroids);
+      pitchScore = Math.max(0, Math.min(100, Math.round((1 - Math.min(1, centroidDistance * 1.8)) * 100)));
+    } else {
+      rhythmScore = Math.min(90, Math.max(35, Math.round(maxUserRms * 160)));
+      timingScore = 60;
+      pitchScore = 65;
+    }
+
+    // Weighted Overall Score (Deterministic between 0 and 100)
+    let totalScore = Math.round((rhythmScore * 0.40) + (timingScore * 0.30) + (pitchScore * 0.30));
+    totalScore = Math.max(5, Math.min(98, totalScore));
 
     const tier = this.getEgyptianRatingTier(totalScore);
 
@@ -522,7 +532,7 @@ class AudioEngine {
       totalScore,
       rhythmScore,
       pitchScore,
-      energyScore,
+      energyScore: timingScore,
       tier
     };
   }
@@ -539,39 +549,47 @@ class AudioEngine {
     return res;
   }
 
-  // Egyptian Comedic Rating Tiers (English with Egyptian tags)
+  // Clean, lighthearted Egyptian party rating tiers (0-100)
   getEgyptianRatingTier(score) {
     if (score >= 90) {
       return {
-        badge: "Flawless Carbon Copy! 🔥",
-        badgeAr: "نسخة طبق الأصل!",
+        badge: "عالمي! جابها في الجون 🔥",
+        badgeEn: "World-Class! Hit the Target! 🔥",
         color: "#10B981", // Emerald
-        reaction: "Bro is a walking foley artist! You matched the Egyptian sound with 100% precision!",
+        reaction: "عالمي! جابها في الجون بالمللي أداء محترفين 🔥",
         soundTag: "legendary"
       };
-    } else if (score >= 70) {
+    } else if (score >= 75) {
       return {
-        badge: "Absolute Fire! 👌",
-        badgeAr: "جامد فشخ!",
+        badge: "رايق أوي! قريب فشخ 👌",
+        badgeEn: "Super Smooth! Incredibly Close! 👌",
         color: "#3B82F6", // Blue
-        reaction: "Incredible mimicry! You're just a tiny whisper away from the original recording.",
+        reaction: "رايق أوي! قريب فشخ من الصوت الأصلي 👌",
         soundTag: "great"
       };
-    } else if (score >= 40) {
+    } else if (score >= 50) {
       return {
-        badge: "Not bad, try again! 😂",
-        badgeAr: "مش بطال، بس حاول تاني",
+        badge: "مش بطال، سامع المحاولة 👏",
+        badgeEn: "Not Bad, We Hear The Effort! 👏",
         color: "#F59E0B", // Amber
-        reaction: "The spirit was there, but your vocal cords took an unexpected detour!",
+        reaction: "مش بطال، سامع المحاولة والروح كانت عالية 👏",
         soundTag: "okay"
+      };
+    } else if (score >= 25) {
+      return {
+        badge: "محتاجة شوية تظبيط بس ضحكتنا 😂",
+        badgeEn: "Needs A Little Tuning, But Great Laughs! 😂",
+        color: "#FB923C", // Orange
+        reaction: "محتاجة شوية تظبيط بس ضحكتنا وملت الجو بهجة 😂",
+        soundTag: "funny"
       };
     } else {
       return {
-        badge: "What on earth was that?! 💀",
-        badgeAr: "إيه ده يا فنان؟! ودني ولعت!",
-        color: "#EF4444", // Red
-        reaction: "My ears need immediate medical attention! That was more of a noise violation than mimicry!",
-        soundTag: "fail"
+        badge: "المهم المشاركة والروح الرياضية! 🤝",
+        badgeEn: "Good Sportsmanship! 🤝",
+        color: "#64748B", // Slate
+        reaction: "المهم المشاركة والروح الرياضية والضحكة الحلوة! 🤝",
+        soundTag: "sportsmanship"
       };
     }
   }

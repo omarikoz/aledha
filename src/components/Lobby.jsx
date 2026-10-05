@@ -442,7 +442,7 @@ export default function Lobby({
                 className="btn-arcade btn-arcade-gold w-full text-xl py-4"
               >
                 <Play size={22} className="fill-black" />
-                <span>Start Match! قلدها 🔥</span>
+                <span>ابدأ اللعبة (Start Game) 🔥</span>
               </button>
             ) : (
               <div className="text-center p-4 bg-slate-900/80 border-2 border-black rounded-xl shadow-[3px_3px_0px_#000]">

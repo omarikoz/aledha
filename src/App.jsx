@@ -47,10 +47,10 @@ export default function App() {
     };
   }, [isClientMode]);
 
-  // Client mode starter
-  const startClientSolo = ({ playerName, avatar, character }) => {
+  // Client mode starter (Host Game / Solo Practice) - NEVER auto-starts! Stays in Lobby view.
+  const startClientRoom = ({ playerName, avatar, character, isSolo = false }) => {
     setIsClientMode(true);
-    const res = clientGameEngine.createSoloRoom({ playerName, avatar, character });
+    const res = clientGameEngine.createRoom({ playerName, avatar, character, isSolo });
     setPlayer(res.player);
   };
 
@@ -61,11 +61,11 @@ export default function App() {
         if (res?.success) {
           setPlayer(res.player);
         } else {
-          startClientSolo({ playerName, avatar, character });
+          startClientRoom({ playerName, avatar, character, isSolo: false });
         }
       });
     } else {
-      startClientSolo({ playerName, avatar, character });
+      startClientRoom({ playerName, avatar, character, isSolo: false });
     }
   };
 
@@ -83,29 +83,24 @@ export default function App() {
     });
   };
 
-  // Solo Practice: Creates room, auto-adds 2 funny bots, and starts game
+  // Solo Practice: Creates room with 2 Egyptian bots, and STAYS in lobby until host clicks Start Game
   const handleSoloPractice = ({ playerName, avatar, character }) => {
     if (socket.connected) {
       socket.emit('create_room', { playerName, avatar, character }, (res) => {
         if (res?.success) {
           setPlayer(res.player);
           const roomId = res.roomId;
-          // Add 2 bots
-          setTimeout(() => {
-            socket.emit('add_bot', { roomId });
-            socket.emit('add_bot', { roomId });
-            // Start game
-            setTimeout(() => {
-              socket.emit('start_game', { roomId });
-            }, 400);
-          }, 300);
+          // Add 2 bots to the lobby
+          socket.emit('add_bot', { roomId });
+          socket.emit('add_bot', { roomId });
+          // NO auto-start! Player stays in lobby until clicking Start Game!
         } else {
-          startClientSolo({ playerName, avatar, character });
+          startClientRoom({ playerName, avatar, character, isSolo: true });
         }
       });
     } else {
-      // Runs 100% in browser on GitHub Pages without requiring a backend!
-      startClientSolo({ playerName, avatar, character });
+      // Offline / GitHub Pages mode - creates lobby with 2 bots, stays in lobby
+      startClientRoom({ playerName, avatar, character, isSolo: true });
     }
   };
 
@@ -118,18 +113,27 @@ export default function App() {
   };
 
   const handleAddBot = () => {
-    if (!room?.id) return;
-    socket.emit('add_bot', { roomId: room.id });
+    if (isClientMode) {
+      clientGameEngine.addBot();
+    } else if (room?.id) {
+      socket.emit('add_bot', { roomId: room.id });
+    }
   };
 
   const handleRemoveBot = (botId) => {
-    if (!room?.id) return;
-    socket.emit('remove_bot', { roomId: room.id, botId });
+    if (isClientMode) {
+      clientGameEngine.removeBot(botId);
+    } else if (room?.id) {
+      socket.emit('remove_bot', { roomId: room.id, botId });
+    }
   };
 
   const handleUpdateSettings = (settings) => {
-    if (!room?.id) return;
-    socket.emit('update_settings', { roomId: room.id, settings });
+    if (isClientMode) {
+      clientGameEngine.updateSettings(settings);
+    } else if (room?.id) {
+      socket.emit('update_settings', { roomId: room.id, settings });
+    }
   };
 
   // Recorder Submit

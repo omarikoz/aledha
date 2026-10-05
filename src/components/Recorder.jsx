@@ -77,31 +77,16 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
 
         if (!isMounted) return;
         setIsCapturing(false);
-        setHasRecorded(true);
+        // Deterministic score recording against reference sound
+        const scoreResult = audioEngine.scoreRecording(userRec.audioBuffer, refBuffer);
 
-        // Score recording against reference
-        let scoreResult;
-        if (userRec.audioBuffer && refBuffer) {
-          scoreResult = audioEngine.scoreRecording(userRec.audioBuffer, refBuffer);
-        } else {
-          // Fallback scoring if audio buffer decoding had browser restriction
-          scoreResult = {
-            totalScore: Math.floor(Math.random() * 30) + 55,
-            rhythmScore: Math.floor(Math.random() * 30) + 50,
-            pitchScore: Math.floor(Math.random() * 30) + 50,
-            energyScore: Math.floor(Math.random() * 30) + 60,
-            tier: audioEngine.getEgyptianRatingTier(70)
-          };
-        }
-
-        // Convert Blob to local Object URL for immediate playback without serialization loss
-        const objectUrl = userRec.blob ? URL.createObjectURL(userRec.blob) : null;
-        const recordedAudioUrl = objectUrl || userRec.dataUrl;
+        // Capture direct Object URL from real MediaRecorder audioBlob
+        const recordedAudioUrl = userRec.objectUrl || (userRec.blob ? URL.createObjectURL(userRec.blob) : userRec.dataUrl);
 
         // Submit to room
         onSubmitRecording({
           recordedAudioUrl,
-          audioDataUrl: userRec.dataUrl,
+          audioDataUrl: userRec.dataUrl || recordedAudioUrl,
           score: scoreResult.totalScore,
           rhythmScore: scoreResult.rhythmScore,
           pitchScore: scoreResult.pitchScore,
@@ -113,15 +98,15 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         if (isMounted) {
           setMicError(err.message || 'Microphone error occurred');
           setIsCapturing(false);
-          // Auto fallback score so match doesn't get stuck
+          // Deterministic fallback score for error state
           onSubmitRecording({
             recordedAudioUrl: null,
             audioDataUrl: null,
-            score: 25,
-            rhythmScore: 20,
-            pitchScore: 25,
-            energyScore: 30,
-            tier: audioEngine.getEgyptianRatingTier(25)
+            score: 15,
+            rhythmScore: 10,
+            pitchScore: 15,
+            energyScore: 15,
+            tier: audioEngine.getEgyptianRatingTier(15)
           });
         }
       }
