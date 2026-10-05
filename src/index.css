@@ -220,3 +220,17 @@ body {
   color: var(--color-pink);
   text-shadow: 0 0 15px rgba(244, 63, 94, 0.5);
 }
+
+/* Mobile-First Screen Optimizations */
+@media (max-width: 640px) {
+  .arcade-card {
+    padding: 1.1rem;
+    border-radius: 1.25rem;
+    box-shadow: 4px 4px 0px #000000;
+  }
+  .btn-arcade {
+    font-size: 0.95rem;
+    padding: 0.7rem 1.1rem;
+    box-shadow: 3px 3px 0px #000000;
+  }
+}

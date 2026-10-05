@@ -20,11 +20,6 @@ export default function RevealScreen({
   const isHost = player?.isHost;
   const isLastPlayer = revealIndex >= recordings.length - 1;
 
-  // Strict 6.0s max audio duration + 1.5s reaction buffer
-  const clipDuration = Math.min(6.0, Math.max(2.0, sound?.duration || 3.5));
-  const totalStepDuration = clipDuration + 1.5;
-  const [countdown, setCountdown] = useState(totalStepDuration);
-
   // Match contestant character profile
   const contestantPlayer = (room?.players || []).find(p => p.id === currentRec?.playerId);
   const contestantCharacter = currentRec?.character || contestantPlayer?.character || null;
@@ -77,29 +72,11 @@ export default function RevealScreen({
           setIsPlayingAudio(false);
         }
       } else if (isAI) {
-        // AI Bot: strictly procedural mimic synthesis (never plays the clean reference sound!)
+        // AI Bot: procedural mimic synthesis
         setIsPlayingAudio(true);
         soundSynthesizer.playBotMimic(sound, currentRec, () => setIsPlayingAudio(false));
       }
     }
-
-    // Auto-advance timer: clipDuration + 1.5s buffer
-    if (timerRef.current) clearInterval(timerRef.current);
-    const startTime = Date.now();
-    const durationMs = Math.round(totalStepDuration * 1000);
-
-    timerRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, (durationMs - elapsed) / 1000);
-      setCountdown(remaining);
-
-      if (remaining <= 0) {
-        clearInterval(timerRef.current);
-        if (isHost) {
-          onNextRevealStep();
-        }
-      }
-    }, 100);
 
     return () => {
       soundSynthesizer.stopAll();
@@ -110,9 +87,8 @@ export default function RevealScreen({
         } catch (e) {}
         audioRef.current = null;
       }
-      if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [revealIndex, currentRec?.playerId, humanAudioSource, isAI, isHost, onNextRevealStep, totalStepDuration]);
+  }, [revealIndex, currentRec?.playerId, humanAudioSource, isAI]);
 
   // Replay contestant vocal take
   const handleTogglePlay = () => {
@@ -306,52 +282,29 @@ export default function RevealScreen({
           </div>
         </div>
 
-        {/* Pacing Progress Bar & Fair Skip Management */}
-        <div className="mt-4 pt-3 border-t border-white/10 text-left">
-          <div className="flex justify-between text-xs font-bold text-slate-400 mb-1.5">
-            <span>
-              {isLastPlayer
-                ? 'Advancing to Match Leaderboard...'
-                : 'Next Contestant coming up...'}
-            </span>
-            <span className="text-amber-400 font-mono">{Math.ceil(countdown)}s</span>
-          </div>
-          <div className="w-full h-2.5 bg-slate-950 rounded-full border border-black overflow-hidden mb-3">
-            <div
-              className="h-full bg-gradient-to-r from-amber-400 to-cyan-400 transition-all duration-100 ease-linear"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-
-          {/* Host Skip Button (Controlled: locked during voice clip, unlocked in reaction buffer) */}
-          {isHost && (
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-bold">
-                {canSkip ? 'Reaction Buffer Active' : 'Listening to Vocal Take...'}
+        {/* Host Explicit Next Contestant Controls */}
+        <div className="mt-4 pt-3 border-t border-white/10">
+          {isHost ? (
+            <button
+              onClick={() => {
+                soundSynthesizer.playUiSound('go');
+                onNextRevealStep();
+              }}
+              className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
+            >
+              <span>
+                {isLastPlayer
+                  ? 'View Leaderboard 🏆 (عرض النتائج)'
+                  : 'Next Contestant ⏭️ (المتسابق التالي)'}
               </span>
-
-              <button
-                onClick={handleManualSkip}
-                disabled={!canSkip}
-                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl font-bold transition ${
-                  canSkip
-                    ? 'bg-amber-400 text-black hover:bg-amber-300 cursor-pointer shadow'
-                    : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
-                }`}
-                title={canSkip ? 'Skip to next reveal' : 'Audio must finish playing before skipping'}
-              >
-                {canSkip ? (
-                  <>
-                    <span>Next Contestant</span>
-                    <FastForward size={14} />
-                  </>
-                ) : (
-                  <>
-                    <Lock size={12} />
-                    <span>Fair Audio Listening ({Math.max(0, Math.ceil(countdown - 1.5))}s)</span>
-                  </>
-                )}
-              </button>
+              <ChevronRight size={20} />
+            </button>
+          ) : (
+            <div className="text-center p-3 bg-slate-900/90 border border-white/10 rounded-2xl">
+              <span className="text-xs sm:text-sm font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
+                <span>⏳</span>
+                <span>Waiting for Host to advance to the next contestant...</span>
+              </span>
             </div>
           )}
         </div>

@@ -77,16 +77,18 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
 
         if (!isMounted) return;
         setIsCapturing(false);
+        setHasRecorded(true);
+
         // Deterministic score recording against reference sound
         const scoreResult = audioEngine.scoreRecording(userRec.audioBuffer, refBuffer);
 
-        // Capture direct Object URL from real MediaRecorder audioBlob
-        const recordedAudioUrl = userRec.objectUrl || (userRec.blob ? URL.createObjectURL(userRec.blob) : userRec.dataUrl);
+        // Submit to room with universal WAV data URL
+        const recordedAudioUrl = userRec.objectUrl;
+        const audioDataUrl = userRec.dataUrl;
 
-        // Submit to room
         onSubmitRecording({
           recordedAudioUrl,
-          audioDataUrl: userRec.dataUrl || recordedAudioUrl,
+          audioDataUrl,
           score: scoreResult.totalScore,
           rhythmScore: scoreResult.rhythmScore,
           pitchScore: scoreResult.pitchScore,
@@ -122,35 +124,35 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   }, [sound, onSubmitRecording]);
 
   return (
-    <div className="w-full max-w-xl mx-auto px-4 py-6 text-center">
+    <div className="w-full max-w-xl mx-auto px-3 py-4 text-center">
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
         {/* Pulsing Header */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-sm mb-4 animate-pulse">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
-          <span>🔴 LIVE RECORDING: MIMIC IT NOW! (قَلِّدْهَا)</span>
+          <span>🔴 RECORDING: MIMIC IT NOW! (قَلِّدْهَا)</span>
         </div>
 
-        <h2 className="text-3xl md:text-5xl font-black text-amber-400 mb-1 tracking-tight">
+        <h2 className="text-2xl sm:text-4xl font-black text-amber-400 mb-1 tracking-tight">
           Mimic: {sound.name}
         </h2>
         {sound.nameAr && (
-          <p className="text-sm font-bold text-amber-200/80 font-cairo mb-3">
+          <p className="text-sm font-bold text-amber-200/80 font-cairo mb-2">
             ({sound.nameAr})
           </p>
         )}
-        <p className="text-sm font-bold text-slate-300 mb-4">
-          Speak and make the sound directly into your microphone!
+        <p className="text-xs sm:text-sm font-bold text-slate-300 mb-3">
+          Speak and make the sound directly into your phone microphone!
         </p>
 
         {/* Live Audio Visualizer Canvas */}
-        <div className="w-full max-w-md my-2 relative">
+        <div className="w-full max-w-sm sm:max-w-md my-2 relative">
           <canvas
             ref={canvasRef}
-            width={450}
-            height={120}
-            className="visualizer-canvas"
+            width={360}
+            height={100}
+            className="visualizer-canvas w-full rounded-xl"
           />
-          <div className="absolute top-2 left-3 text-[11px] font-mono font-bold text-amber-300/80 bg-black/60 px-2 py-0.5 rounded border border-white/10">
+          <div className="absolute top-2 left-3 text-[10px] font-mono font-bold text-amber-300/80 bg-black/60 px-2 py-0.5 rounded border border-white/10">
             Live Audio Scope
           </div>
         </div>

@@ -10,29 +10,43 @@ import GameOver from './components/GameOver.jsx';
 import SoundTester from './components/SoundTester.jsx';
 import { socket } from './services/socket.js';
 import { soundSynthesizer } from './services/soundSynthesizer.js';
-import { clientGameEngine } from './services/clientGameEngine.js';
+import { peerNetwork } from './services/peerNetwork.js';
+import { audioEngine } from './services/audioEngine.js';
 
 export default function App() {
   const [room, setRoom] = useState(null);
   const [player, setPlayer] = useState(null);
   const [localRecordedAudioUrl, setLocalRecordedAudioUrl] = useState(null);
   const [isTesterOpen, setIsTesterOpen] = useState(false);
-  const [isClientMode, setIsClientMode] = useState(false);
 
-  // Listen to server room updates & client engine updates
+  // iOS Web Audio Context unlocker: unlocks audio on first user touch/tap anywhere
   useEffect(() => {
-    const unsubscribe = clientGameEngine.subscribe((updatedRoom) => {
-      if (isClientMode) {
-        setRoom(updatedRoom);
-        if (updatedRoom.players) {
-          const me = updatedRoom.players.find((p) => p.id === 'local_player');
-          if (me) setPlayer(me);
-        }
-      }
+    const unlock = () => {
+      audioEngine.unlockAudioContext();
+    };
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('click', unlock, { passive: true });
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('pointerdown', unlock);
+    };
+  }, []);
+
+  // Listen to P2P peer network updates (for GitHub Pages & Mobile WebRTC)
+  useEffect(() => {
+    peerNetwork.onRoomUpdate((updatedRoom) => {
+      setRoom(updatedRoom);
     });
 
+    peerNetwork.onPlayerUpdate((updatedPlayer) => {
+      setPlayer(updatedPlayer);
+    });
+
+    // Also support local Socket.io if running local server daemon
     socket.on('room_update', (updatedRoom) => {
-      if (!isClientMode) {
+      if (!peerNetwork.roomId) {
         setRoom(updatedRoom);
         if (socket.id) {
           const me = updatedRoom.players?.find((p) => p.id === socket.id);
@@ -42,95 +56,67 @@ export default function App() {
     });
 
     return () => {
-      unsubscribe();
       socket.off('room_update');
     };
-  }, [isClientMode]);
+  }, []);
 
-  // Client mode starter (Host Game / Solo Practice) - NEVER auto-starts! Stays in Lobby view.
-  const startClientRoom = ({ playerName, avatar, character, isSolo = false }) => {
-    setIsClientMode(true);
-    const res = clientGameEngine.createRoom({ playerName, avatar, character, isSolo });
-    setPlayer(res.player);
-  };
-
-  // Handlers for Lobby
+  // Handlers for Lobby Room Creation & Joining
   const handleCreateRoom = ({ playerName, avatar, character }) => {
+    // If local Node.js socket server is connected, use it; otherwise use P2P WebRTC directly on mobile/browser
     if (socket.connected) {
       socket.emit('create_room', { playerName, avatar, character }, (res) => {
         if (res?.success) {
           setPlayer(res.player);
         } else {
-          startClientRoom({ playerName, avatar, character, isSolo: false });
+          peerNetwork.createRoom({ playerName, avatar, character }, (p2pRes) => {
+            if (p2pRes.success) setPlayer(p2pRes.player);
+          });
         }
       });
     } else {
-      startClientRoom({ playerName, avatar, character, isSolo: false });
+      peerNetwork.createRoom({ playerName, avatar, character }, (p2pRes) => {
+        if (p2pRes.success) setPlayer(p2pRes.player);
+      });
     }
   };
 
   const handleJoinRoom = ({ roomId, playerName, avatar, character }, onError) => {
-    if (!socket.connected) {
-      if (onError) onError('Multiplayer requires a live game server. Click "Play vs AI (Solo)" to play right now in your browser!');
-      return;
-    }
-    socket.emit('join_room', { roomId, playerName, avatar, character }, (res) => {
-      if (res?.success) {
-        setPlayer(res.player);
-      } else if (onError) {
-        onError(res?.error || 'Could not join room');
-      }
-    });
-  };
-
-  // Solo Practice: Creates room with 2 Egyptian bots, and STAYS in lobby until host clicks Start Game
-  const handleSoloPractice = ({ playerName, avatar, character }) => {
     if (socket.connected) {
-      socket.emit('create_room', { playerName, avatar, character }, (res) => {
+      socket.emit('join_room', { roomId, playerName, avatar, character }, (res) => {
         if (res?.success) {
           setPlayer(res.player);
-          const roomId = res.roomId;
-          // Add 2 bots to the lobby
-          socket.emit('add_bot', { roomId });
-          socket.emit('add_bot', { roomId });
-          // NO auto-start! Player stays in lobby until clicking Start Game!
         } else {
-          startClientRoom({ playerName, avatar, character, isSolo: true });
+          peerNetwork.joinRoom({ roomId, playerName, avatar, character }, (p2pRes) => {
+            if (p2pRes.success) {
+              setPlayer(p2pRes.player);
+            } else if (onError) {
+              onError(p2pRes.error || 'Could not join room');
+            }
+          });
         }
       });
     } else {
-      // Offline / GitHub Pages mode - creates lobby with 2 bots, stays in lobby
-      startClientRoom({ playerName, avatar, character, isSolo: true });
+      peerNetwork.joinRoom({ roomId, playerName, avatar, character }, (p2pRes) => {
+        if (p2pRes.success) {
+          setPlayer(p2pRes.player);
+        } else if (onError) {
+          onError(p2pRes.error || 'Could not join room');
+        }
+      });
     }
   };
 
   const handleStartGame = () => {
-    if (isClientMode) {
-      clientGameEngine.startGame();
+    if (peerNetwork.roomId) {
+      peerNetwork.startGame();
     } else if (room?.id) {
       socket.emit('start_game', { roomId: room.id });
     }
   };
 
-  const handleAddBot = () => {
-    if (isClientMode) {
-      clientGameEngine.addBot();
-    } else if (room?.id) {
-      socket.emit('add_bot', { roomId: room.id });
-    }
-  };
-
-  const handleRemoveBot = (botId) => {
-    if (isClientMode) {
-      clientGameEngine.removeBot(botId);
-    } else if (room?.id) {
-      socket.emit('remove_bot', { roomId: room.id, botId });
-    }
-  };
-
   const handleUpdateSettings = (settings) => {
-    if (isClientMode) {
-      clientGameEngine.updateSettings(settings);
+    if (peerNetwork.roomId) {
+      peerNetwork.updateSettings(settings);
     } else if (room?.id) {
       socket.emit('update_settings', { roomId: room.id, settings });
     }
@@ -142,8 +128,8 @@ export default function App() {
     if (recordingData.recordedAudioUrl) {
       setLocalRecordedAudioUrl(recordingData.recordedAudioUrl);
     }
-    if (isClientMode) {
-      clientGameEngine.submitRecording(recordingData);
+    if (peerNetwork.roomId) {
+      peerNetwork.submitRecording(recordingData);
     } else {
       socket.emit('submit_recording', { roomId: room.id, recordingData });
     }
@@ -152,8 +138,8 @@ export default function App() {
   // Reveal Step
   const handleNextRevealStep = () => {
     if (!room?.id) return;
-    if (isClientMode) {
-      clientGameEngine.nextRevealStep();
+    if (peerNetwork.roomId) {
+      peerNetwork.nextRevealStep();
     } else {
       socket.emit('next_reveal_step', { roomId: room.id });
     }
@@ -162,8 +148,8 @@ export default function App() {
   // Leaderboard Advance
   const handleAdvanceRound = () => {
     if (!room?.id) return;
-    if (isClientMode) {
-      clientGameEngine.advanceRound();
+    if (peerNetwork.roomId) {
+      peerNetwork.advanceRound();
     } else {
       socket.emit('advance_round', { roomId: room.id });
     }
@@ -172,8 +158,8 @@ export default function App() {
   // Play Again
   const handlePlayAgain = () => {
     if (!room?.id) return;
-    if (isClientMode) {
-      clientGameEngine.playAgain();
+    if (peerNetwork.roomId) {
+      peerNetwork.playAgain();
     } else {
       socket.emit('play_again', { roomId: room.id });
     }
@@ -181,10 +167,7 @@ export default function App() {
 
   // Leave Room
   const handleLeaveRoom = () => {
-    if (isClientMode) {
-      clientGameEngine.cleanup();
-      setIsClientMode(false);
-    }
+    peerNetwork.cleanup();
     setRoom(null);
     setPlayer(null);
     window.location.reload();
@@ -200,7 +183,7 @@ export default function App() {
       />
 
       {/* Main Game Screen depending on Room State */}
-      <main className="flex-1 flex items-center justify-center py-2">
+      <main className="flex-1 flex items-center justify-center py-2 px-2 sm:px-4">
         {!room || room.state === 'LOBBY' ? (
           <Lobby
             room={room}
@@ -208,15 +191,12 @@ export default function App() {
             onCreateRoom={handleCreateRoom}
             onJoinRoom={handleJoinRoom}
             onStartGame={handleStartGame}
-            onAddBot={handleAddBot}
-            onRemoveBot={handleRemoveBot}
             onUpdateSettings={handleUpdateSettings}
-            onSoloPractice={handleSoloPractice}
           />
         ) : room.state === 'COUNTDOWN' ? (
           <Countdown
-            seconds={room.timer}
-            currentRound={room.currentRound}
+            timer={room.timer}
+            round={room.currentRound || 1}
             totalRounds={room.totalRounds || room.settings?.rounds || 3}
           />
         ) : room.state === 'SOUND' ? (
@@ -232,13 +212,13 @@ export default function App() {
             onSubmitRecording={handleSubmitRecording}
           />
         ) : room.state === 'PROCESSING' ? (
-          <div className="arcade-card text-center p-8 max-w-md mx-auto">
-            <div className="text-5xl animate-bounce mb-3">🎛️</div>
-            <h3 className="text-2xl font-black text-amber-400 mb-2">
-              Evaluating Vocal Inflections & Accuracies...
+          <div className="arcade-card text-center p-6 sm:p-8 max-w-sm sm:max-w-md mx-auto">
+            <div className="text-4xl sm:text-5xl animate-bounce mb-3">🎛️</div>
+            <h3 className="text-xl sm:text-2xl font-black text-amber-400 mb-2">
+              Evaluating Vocal Impressions...
             </h3>
-            <p className="text-slate-300 text-sm">
-              AI is comparing pitch contours, rhythm envelopes, and tonal frequencies!
+            <p className="text-slate-300 text-xs sm:text-sm">
+              Analyzing vocal energy, pitch contours, and timing matches!
             </p>
           </div>
         ) : room.state === 'REVEAL' ? (
@@ -265,8 +245,8 @@ export default function App() {
       </main>
 
       {/* Footer Info */}
-      <footer className="w-full text-center py-3 text-xs text-slate-500 font-bold border-t border-white/5">
-        Aledha (قَلِّدْهَا) • Egyptian Voice Mimic Party Game 🇪🇬 • Powered by Web Audio API & WebSockets
+      <footer className="w-full text-center py-2.5 text-[11px] sm:text-xs text-slate-500 font-bold border-t border-white/5">
+        Aledha (قَلِّدْهَا) • Egyptian Voice Mimic Party Game 🇪🇬 • Multiplayer with Friends
       </footer>
 
       {/* Sound Library & Mic Tester Modal */}
