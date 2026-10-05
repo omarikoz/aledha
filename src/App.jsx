@@ -246,7 +246,7 @@ export default function App() {
 
       {/* Footer Info */}
       <footer className="w-full text-center py-2.5 text-[11px] sm:text-xs text-slate-500 font-bold border-t border-white/5">
-        Aledha (قَلِّدْهَا) • Egyptian Voice Mimic Party Game 🇪🇬 • Multiplayer with Friends
+        Aledha (قَلِّدْهَا) • Egyptian Voice Party Game 🇪🇬 • Multiplayer with Friends
       </footer>
 
       {/* Sound Library & Mic Tester Modal */}

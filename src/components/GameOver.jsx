@@ -53,8 +53,8 @@ export default function GameOver({
           <span>Match Finished & Champion Crowned!</span>
         </div>
 
-        <h1 className="text-4xl md:text-5xl font-black text-white mb-2">
-          The Egyptian Mimic King 👑
+        <h1 className="text-3xl sm:text-5xl font-black text-white mb-2">
+          The Egyptian Voice Champion 👑
         </h1>
         <p className="text-slate-300 text-sm mb-8">
           Big shoutout to all the golden vocal cords that brought the energy and laughs!

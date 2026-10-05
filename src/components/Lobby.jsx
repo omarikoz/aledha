@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Users, Crown, Sparkles, Play, Dices, Settings, Copy, Check } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
+import { audioEngine } from '../services/audioEngine.js';
 import { DEFAULT_CHARACTER } from '../data/characters.js';
 import CharacterSelectModal from './CharacterSelectModal.jsx';
 
@@ -73,7 +74,7 @@ export default function Lobby({
             Ready to Play with Friends?!
           </h2>
           <p className="text-slate-300 text-xs sm:text-sm mb-4 px-2">
-            Listen to iconic Egyptian sounds, mimic them into your mic, and see who did the best impression!
+            Listen to iconic Egyptian sounds, say them into your mic, and see who did the best sound!
           </p>
 
           {/* Player Name Input */}
@@ -159,6 +160,7 @@ export default function Lobby({
               <button
                 onClick={() => {
                   soundSynthesizer.playUiSound('go');
+                  audioEngine.initMic().catch(() => {});
                   onCreateRoom({ playerName: name, avatar: selectedCharacter.avatar, character: selectedCharacter });
                 }}
                 className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2"
@@ -170,6 +172,7 @@ export default function Lobby({
               <button
                 onClick={() => {
                   soundSynthesizer.playUiSound('click');
+                  audioEngine.initMic().catch(() => {});
                   setJoinMode(true);
                 }}
                 className="btn-arcade btn-arcade-cyan w-full text-sm sm:text-base py-3 flex items-center justify-center gap-2"
@@ -201,6 +204,7 @@ export default function Lobby({
                     return;
                   }
                   soundSynthesizer.playUiSound('go');
+                  audioEngine.initMic().catch(() => {});
                   onJoinRoom({ roomId: roomCodeInput.trim(), playerName: name, avatar: selectedCharacter.avatar, character: selectedCharacter }, (err) => {
                     if (err) setErrorMessage(err);
                   });
@@ -344,7 +348,7 @@ export default function Lobby({
                       )}
                     </div>
                     <span className="text-[10px] sm:text-[11px] text-slate-400 block">
-                      {p.id === player?.id ? 'You (Ready)' : p.isHost ? 'Room Host' : 'Ready to Mimic'}
+                      {p.id === player?.id ? 'You (Ready)' : p.isHost ? 'Room Host' : 'Ready to Play'}
                     </span>
                   </div>
                 </div>
@@ -374,6 +378,7 @@ export default function Lobby({
             <button
               onClick={() => {
                 soundSynthesizer.playUiSound('go');
+                audioEngine.initMic().catch(() => {});
                 onStartGame();
               }}
               className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
@@ -388,7 +393,7 @@ export default function Lobby({
                 Waiting for Host to start the match...
               </p>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Get ready to mimic the sound on your phone!
+                Get ready to make the sound on your phone!
               </p>
             </div>
           )}

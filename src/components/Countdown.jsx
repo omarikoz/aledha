@@ -11,7 +11,7 @@ export default function Countdown({ seconds, currentRound, totalRounds }) {
     }
   }, [seconds]);
 
-  const displayCount = seconds === 3 ? '3' : seconds === 2 ? '2' : seconds === 1 ? '1' : 'MIMIC!';
+  const displayCount = seconds === 3 ? '3' : seconds === 2 ? '2' : seconds === 1 ? '1' : 'قَلِّدْهَا!';
 
   return (
     <div className="w-full max-w-lg mx-auto px-4 py-12 text-center">

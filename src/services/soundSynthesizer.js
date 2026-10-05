@@ -48,18 +48,60 @@ class SoundSynthesizer {
     this.currentSourceNodes = [];
   }
 
-  // Synthesize or play sound by ID or config (Strictly max 6 seconds, exactly ONCE per round)
+  // Play real audio meme file (strictly real MP3, never synthetic oscillator beeps)
   async playTargetSound(soundItem, onEnded) {
     this.stopAll();
+    if (!soundItem) {
+      if (onEnded) onEnded();
+      return;
+    }
 
-    // Clamp duration to max 6.0 seconds
     const maxDurationSec = Math.min(6.0, Math.max(1.5, soundItem?.duration || 3.5));
+    const ctx = audioEngine.getAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
 
-    // Direct MP3 playback
+    // Priority 1: Play decoded AudioBuffer directly via Web Audio API (never blocked by iOS autoplay!)
+    try {
+      const buffer = await this.getReferenceAudioBuffer(soundItem);
+      if (buffer) {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+        source.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        this.currentSourceNodes.push(source, gainNode);
+
+        let ended = false;
+        const finish = () => {
+          if (ended) return;
+          ended = true;
+          if (this.targetSafetyTimeout) clearTimeout(this.targetSafetyTimeout);
+          if (onEnded) onEnded();
+        };
+
+        source.onended = finish;
+        source.start(0);
+
+        this.targetSafetyTimeout = setTimeout(() => {
+          finish();
+          try { source.stop(); } catch (e) {}
+        }, maxDurationSec * 1000);
+
+        return { type: 'web_audio', source };
+      }
+    } catch (e) {
+      console.warn('Web Audio buffer playback error, trying HTML5 Audio:', e);
+    }
+
+    // Priority 2: Fallback to HTML5 Audio element with real sound file
     if (soundItem?.file) {
       try {
         const soundUrl = resolveSoundUrl(soundItem.file);
         const audio = new Audio(soundUrl);
+        audio.volume = 1.0;
         this.currentAudio = audio;
 
         let hasFinished = false;
@@ -72,14 +114,8 @@ class SoundSynthesizer {
         };
 
         audio.onended = handleEnd;
-        audio.onerror = () => {
-          if (hasFinished) return;
-          hasFinished = true;
-          this.currentAudio = null;
-          this.synthesizeSound(soundItem.synthType || 'toktok', maxDurationSec, onEnded);
-        };
+        audio.onerror = handleEnd;
 
-        // Safety hard-stop at max 6.0 seconds
         this.targetSafetyTimeout = setTimeout(() => {
           if (!hasFinished && this.currentAudio === audio) {
             handleEnd();
@@ -90,80 +126,36 @@ class SoundSynthesizer {
         await audio.play();
         return { type: 'file', audio };
       } catch (e) {
-        console.warn('Audio play error, falling back:', e);
-      }
-    }
-
-    // Procedural synthesis fallback if file unavailable (clamped to max 6s)
-    this.synthesizeSound(soundItem?.synthType || 'toktok', maxDurationSec, onEnded);
-    return { type: 'synth' };
-  }
-
-  // Comical bot mimic sound - never replays clean target audio
-  playBotMimic(soundItem, bot, onEnded) {
-    this.stopAll();
-    try {
-      const ctx = audioEngine.getAudioContext();
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const lfo = ctx.createOscillator();
-      const lfoGain = ctx.createGain();
-
-      const baseFreq = bot?.personality === 'pro' ? 320 : bot?.personality === 'wild' ? 480 : 220;
-      osc.type = bot?.personality === 'pro' ? 'sawtooth' : 'triangle';
-      osc.frequency.setValueAtTime(baseFreq, now);
-      osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.4, now + 0.4);
-      osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.75, now + 1.2);
-      osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, now + 1.8);
-
-      lfo.frequency.setValueAtTime(7, now);
-      lfoGain.gain.setValueAtTime(20, now);
-      lfo.connect(osc.frequency);
-
-      gain.gain.setValueAtTime(0.35, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 2.2);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      lfo.start(now);
-      osc.stop(now + 2.2);
-      lfo.stop(now + 2.2);
-
-      this.currentSourceNodes.push(osc, lfo, gain);
-      setTimeout(() => {
+        console.warn('Audio play error:', e);
         if (onEnded) onEnded();
-      }, 2300);
-    } catch (e) {
+      }
+    } else {
       if (onEnded) onEnded();
     }
   }
 
-  // Generate an offline AudioBuffer for acoustic scoring reference
+  // Load real audio buffer for acoustic scoring reference
   async getReferenceAudioBuffer(soundItem) {
-    const ctx = audioEngine.getAudioContext();
-    const duration = soundItem.duration || 3.0;
-    const sampleRate = ctx.sampleRate || 44100;
-
-    // Check if real audio file exists first
-    if (soundItem.file) {
-      try {
-        const soundUrl = resolveSoundUrl(soundItem.file);
-        const resp = await fetch(soundUrl);
-        if (resp.ok) {
-          const arrayBuf = await resp.arrayBuffer();
-          return await ctx.decodeAudioData(arrayBuf);
-        }
-      } catch (e) {}
+    if (!soundItem?.file) return null;
+    if (this.bufferCache && this.bufferCache.has(soundItem.id)) {
+      return this.bufferCache.get(soundItem.id);
     }
 
-    // Generate AudioBuffer offline using OfflineAudioContext
-    const OfflineCtxClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    const offlineCtx = new OfflineCtxClass(1, Math.floor(sampleRate * duration), sampleRate);
-    this.buildSynthGraph(offlineCtx, soundItem.synthType || 'toktok', duration);
-    return await offlineCtx.startRendering();
+    const ctx = audioEngine.getAudioContext();
+    try {
+      const soundUrl = resolveSoundUrl(soundItem.file);
+      const resp = await fetch(soundUrl);
+      if (resp.ok) {
+        const arrayBuf = await resp.arrayBuffer();
+        const decoded = await ctx.decodeAudioData(arrayBuf);
+        if (!this.bufferCache) this.bufferCache = new Map();
+        this.bufferCache.set(soundItem.id, decoded);
+        return decoded;
+      }
+    } catch (e) {
+      console.warn('Error loading reference audio buffer for:', soundItem.file, e);
+    }
+    return null;
   }
 
   // Build audio graph on given context (real-time or offline)

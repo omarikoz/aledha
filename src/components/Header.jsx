@@ -30,7 +30,7 @@ export default function Header({ room, player, onOpenSoundTester }) {
             </h1>
           </div>
           <p className="text-xs text-amber-200/80 font-semibold hidden sm:block">
-            The Egyptian Voice Mimic Game 🇪🇬
+            The Egyptian Voice Party Game 🇪🇬
           </p>
         </div>
       </div>

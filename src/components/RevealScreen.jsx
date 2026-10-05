@@ -119,16 +119,6 @@ export default function RevealScreen({
     }
   };
 
-  // Only allow host skip during the 1.5s reaction buffer (prevent immediate cutoffs)
-  const canSkip = isHost && countdown <= 1.5;
-
-  const handleManualSkip = () => {
-    if (!canSkip) return;
-    soundSynthesizer.playUiSound('click');
-    if (timerRef.current) clearInterval(timerRef.current);
-    onNextRevealStep();
-  };
-
   if (!currentRec) {
     return (
       <div className="arcade-card text-center p-8 max-w-md mx-auto">
@@ -147,7 +137,7 @@ export default function RevealScreen({
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10 text-xs font-bold text-slate-300">
           <div className="flex items-center gap-1.5">
             <Sparkles size={16} className="text-amber-400" />
-            <span>Vocal Mimic Score & Feedback</span>
+            <span>Sound Score & Feedback</span>
           </div>
           <div className="bg-slate-900 border border-white/10 px-3 py-1 rounded-full text-amber-300 font-mono">
             Contestant {revealIndex + 1} of {recordings.length}

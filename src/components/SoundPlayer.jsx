@@ -53,13 +53,17 @@ export default function SoundPlayer({ sound, timer }) {
           </p>
         )}
 
-        {/* Pro Tip / Egyptian Hint */}
-        {sound.hint && (
-          <div className="bg-amber-400/10 border-2 border-amber-400/30 rounded-2xl p-3 my-3 text-amber-200 text-sm font-bold flex items-center gap-2 max-w-md text-left">
-            <span className="text-lg">💡</span>
-            <span><strong>Pro Tip:</strong> {sound.hint}</span>
-          </div>
-        )}
+        {/* Replay Sound Button if needed */}
+        <button
+          onClick={() => {
+            soundSynthesizer.playTargetSound(sound, () => setIsPlaying(false));
+            setIsPlaying(true);
+          }}
+          className="btn-arcade btn-arcade-cyan text-xs py-2 px-4 my-2 flex items-center gap-1.5"
+        >
+          <Volume2 size={15} />
+          <span>Listen Again 🔊</span>
+        </button>
 
         {/* Animated Sound Wave Bars */}
         <div className="flex items-center justify-center gap-1.5 h-16 w-full max-w-xs my-4 bg-slate-950/80 rounded-2xl border-2 border-black p-3">

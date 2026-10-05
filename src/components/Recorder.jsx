@@ -42,15 +42,19 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
               ctx.fillRect(0, 0, canvas.width, canvas.height);
 
               ctx.lineWidth = 3;
-              ctx.strokeStyle = '#fbbf24'; // Gold wave
+              ctx.strokeStyle = micVolume > 0.08 ? '#06b6d4' : '#fbbf24'; // Cyan on speech, gold idle
               ctx.beginPath();
 
               const sliceWidth = (canvas.width * 1.0) / bufferLength;
+              const centerY = canvas.height / 2;
               let x = 0;
 
               for (let i = 0; i < bufferLength; i++) {
-                const v = dataArray[i] / 128.0;
-                const y = (v * canvas.height) / 2;
+                // Normalized delta from center: -1.0 to 1.0
+                const norm = (dataArray[i] - 128) / 128.0;
+                // Amplify vocal fluctuations by 5.5x so voice visibly animates the scope!
+                const amp = norm * 5.5;
+                const y = Math.max(4, Math.min(canvas.height - 4, centerY + (amp * (centerY - 6))));
                 if (i === 0) {
                   ctx.moveTo(x, y);
                 } else {
@@ -59,7 +63,6 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
                 x += sliceWidth;
               }
 
-              ctx.lineTo(canvas.width, canvas.height / 2);
               ctx.stroke();
             }
             animFrameRef.current = requestAnimationFrame(renderVisualizer);
@@ -129,11 +132,11 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         {/* Pulsing Header */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
-          <span>🔴 RECORDING: MIMIC IT NOW! (قَلِّدْهَا)</span>
+          <span>🔴 RECORDING: SAY IT NOW! (قَلِّدْهَا)</span>
         </div>
 
         <h2 className="text-2xl sm:text-4xl font-black text-amber-400 mb-1 tracking-tight">
-          Mimic: {sound.name}
+          Sound: {sound.name}
         </h2>
         {sound.nameAr && (
           <p className="text-sm font-bold text-amber-200/80 font-cairo mb-2">

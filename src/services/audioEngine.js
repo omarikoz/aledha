@@ -505,18 +505,31 @@ class AudioEngine {
     const userSamples = this.preprocessAudio(userAudioBuffer);
     const refSamples = refAudioBuffer ? this.preprocessAudio(refAudioBuffer) : null;
 
+    // Auto-gain normalize user samples for mobile phone microphone variance
+    let maxAmp = 0;
+    for (let i = 0; i < userSamples.length; i++) {
+      const abs = Math.abs(userSamples[i]);
+      if (abs > maxAmp) maxAmp = abs;
+    }
+    if (maxAmp > 0.003) {
+      const gain = Math.min(25.0, 0.85 / maxAmp);
+      for (let i = 0; i < userSamples.length; i++) {
+        userSamples[i] *= gain;
+      }
+    }
+
     // 2. Extract Acoustic Features
     const userFeats = this.extractFeatures(userSamples);
     const refFeats = refSamples ? this.extractFeatures(refSamples) : null;
 
-    // Check if user made actual sound (silence detection)
+    // Check if user was completely silent or muted mic
     let maxUserRms = 0;
     for (let i = 0; i < userFeats.rmsEnvelope.length; i++) {
       if (userFeats.rmsEnvelope[i] > maxUserRms) maxUserRms = userFeats.rmsEnvelope[i];
     }
 
-    if (maxUserRms < 0.012) {
-      // User was silent or muted mic
+    if (maxUserRms < 0.004) {
+      // User was completely silent
       return {
         totalScore: 12,
         rhythmScore: 10,
