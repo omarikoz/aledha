@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { Lock, Unlock, Check, Sparkles, X, KeyRound, AlertCircle, Volume2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Lock, Unlock, Check, X, KeyRound, AlertCircle, Volume2 } from 'lucide-react';
 import { soundPackManager } from '../services/soundPackManager.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
 export default function SoundPackModal({
   isOpen,
   onClose,
-  selectedPackId = 'pack_1',
+  selectedPackId = null,
   onSelectPack,
   isHost = false
 }) {
@@ -15,6 +15,7 @@ export default function SoundPackModal({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const passwordInputRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -26,6 +27,15 @@ export default function SoundPackModal({
     }
   }, [isOpen]);
 
+  // Focus password input when PIN prompt opens
+  useEffect(() => {
+    if (activePinPack && passwordInputRef.current) {
+      setTimeout(() => {
+        passwordInputRef.current?.focus();
+      }, 100);
+    }
+  }, [activePinPack]);
+
   if (!isOpen) return null;
 
   const handleOpenPinPrompt = (pack) => {
@@ -36,9 +46,17 @@ export default function SoundPackModal({
     setIsSuccess(false);
   };
 
-  const handleVerifyPin = () => {
+  const handleVerifyPin = (e) => {
+    if (e) e.preventDefault();
     if (!activePinPack) return;
-    const res = soundPackManager.unlockPack(activePinPack.id, pinInput);
+    
+    const cleanPin = pinInput.trim();
+    if (!cleanPin) {
+      setPinError('Please enter a PIN code.');
+      return;
+    }
+
+    const res = soundPackManager.unlockPack(activePinPack.id, cleanPin);
     if (res.success) {
       soundSynthesizer.playUiSound('go');
       setIsSuccess(true);
@@ -47,30 +65,18 @@ export default function SoundPackModal({
         onSelectPack(activePinPack.id);
         setActivePinPack(null);
         setPinInput('');
+        onClose();
       }, 700);
     } else {
       soundSynthesizer.playUiSound('buzzer');
-      setPinError(res.error || 'Incorrect PIN code!');
+      setPinError('Incorrect PIN code! Please try again.');
     }
   };
 
   const handleDirectSelect = (packId) => {
     soundSynthesizer.playUiSound('click');
     onSelectPack(packId);
-  };
-
-  const handleKeypadDigit = (digit) => {
-    soundSynthesizer.playUiSound('click');
-    if (pinInput.length < 6) {
-      setPinInput((prev) => prev + digit);
-      setPinError('');
-    }
-  };
-
-  const handleKeypadBackspace = () => {
-    soundSynthesizer.playUiSound('click');
-    setPinInput((prev) => prev.slice(0, -1));
-    setPinError('');
+    onClose();
   };
 
   return (
@@ -105,11 +111,11 @@ export default function SoundPackModal({
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto py-3 sm:py-4 space-y-3.5 custom-scrollbar">
-          {/* Active PIN Prompt Sub-View */}
+          {/* Active PIN Prompt Sub-View (Secure: NO PIN SHOWN ANYWHERE) */}
           {activePinPack ? (
-            <div className="p-4 sm:p-5 rounded-3xl bg-slate-950/95 border-2 border-amber-400 shadow-[4px_4px_0px_#000] text-center space-y-4 animate-bounce-in">
+            <div className="p-4 sm:p-6 rounded-3xl bg-slate-950/95 border-2 border-amber-400 shadow-[4px_4px_0px_#000] text-center space-y-4 animate-bounce-in">
               <div className="w-14 h-14 rounded-2xl bg-amber-400 text-black border-2 border-black flex items-center justify-center text-2xl mx-auto shadow-[3px_3px_0px_#000]">
-                {isSuccess ? <Check size={32} /> : <KeyRound size={28} />}
+                {isSuccess ? <Check size={32} /> : <Lock size={28} />}
               </div>
 
               <div>
@@ -120,105 +126,62 @@ export default function SoundPackModal({
                   Unlock "{activePinPack.name}"
                 </h3>
                 <p className="text-xs text-slate-300 mt-1">
-                  Enter the 4-digit security PIN to unlock this sound collection.
+                  This sound collection is PIN-locked. Enter the passcode to unlock and select it.
                 </p>
               </div>
 
-              {/* PIN Display Digits */}
-              <div className="flex justify-center gap-2.5 my-2">
-                {[0, 1, 2, 3].map((idx) => {
-                  const digit = pinInput[idx];
-                  return (
-                    <div
-                      key={idx}
-                      className={`w-12 h-14 rounded-2xl border-2 flex items-center justify-center text-2xl font-mono font-black transition ${
-                        isSuccess
-                          ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
-                          : pinError
-                          ? 'border-rose-500 bg-rose-500/20 text-rose-300'
-                          : digit
-                          ? 'border-amber-400 bg-slate-900 text-amber-300 shadow-[2px_2px_0px_#000]'
-                          : 'border-slate-800 bg-slate-950 text-slate-600'
-                      }`}
-                    >
-                      {digit ? '●' : ''}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Error / Success Message */}
-              {pinError && (
-                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-400 bg-rose-500/10 px-3 py-1 rounded-xl border border-rose-500/30">
-                  <AlertCircle size={14} />
-                  <span>{pinError}</span>
+              {isSuccess ? (
+                <div className="py-4">
+                  <div className="inline-flex items-center gap-2 text-sm font-black text-emerald-400 bg-emerald-500/20 px-4 py-2 rounded-2xl border-2 border-emerald-500 animate-bounce">
+                    <Check size={18} />
+                    <span>Pack Unlocked & Selected! ✓</span>
+                  </div>
                 </div>
-              )}
-
-              {isSuccess && (
-                <div className="inline-flex items-center gap-1.5 text-xs font-black text-emerald-400 bg-emerald-500/20 px-3.5 py-1.5 rounded-xl border border-emerald-500">
-                  <Check size={16} />
-                  <span>Pack Unlocked Successfully! ✓</span>
-                </div>
-              )}
-
-              {/* Virtual Keypad */}
-              {!isSuccess && (
-                <div className="max-w-[260px] mx-auto pt-1 space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => handleKeypadDigit(d)}
-                        className="btn-arcade bg-slate-900 hover:bg-slate-800 text-white border-black text-lg py-2 rounded-xl transition active:scale-95 shadow-[2px_2px_0px_#000]"
-                      >
-                        {d}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setPinInput('')}
-                      className="btn-arcade bg-slate-950 text-slate-400 border-black text-xs py-2 rounded-xl hover:text-white"
-                    >
-                      Clear
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleKeypadDigit('0')}
-                      className="btn-arcade bg-slate-900 hover:bg-slate-800 text-white border-black text-lg py-2 rounded-xl transition active:scale-95 shadow-[2px_2px_0px_#000]"
-                    >
-                      0
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleKeypadBackspace}
-                      className="btn-arcade bg-slate-950 text-slate-400 border-black text-xs py-2 rounded-xl hover:text-white"
-                    >
-                      ⌫
-                    </button>
+              ) : (
+                <form onSubmit={handleVerifyPin} className="space-y-4 max-w-sm mx-auto pt-1">
+                  <div>
+                    <input
+                      ref={passwordInputRef}
+                      type="password"
+                      autoFocus
+                      placeholder="Enter PIN code"
+                      value={pinInput}
+                      onChange={(e) => {
+                        setPinInput(e.target.value);
+                        setPinError('');
+                      }}
+                      className="w-full text-center text-2xl font-mono tracking-widest bg-slate-900 border-2 border-black rounded-xl p-3 text-amber-400 placeholder:text-slate-600 focus:outline-none focus:border-amber-400 shadow-[3px_3px_0px_#000]"
+                    />
                   </div>
 
-                  <div className="flex gap-2 pt-2">
+                  {pinError && (
+                    <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-rose-400 bg-rose-500/15 py-1.5 px-3 rounded-xl border border-rose-500/30">
+                      <AlertCircle size={14} />
+                      <span>{pinError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2.5 pt-1">
                     <button
                       type="button"
                       onClick={() => setActivePinPack(null)}
-                      className="btn-arcade btn-arcade-dark flex-1 py-2 text-xs"
+                      className="btn-arcade btn-arcade-dark flex-1 py-2.5 text-xs font-bold"
                     >
                       Cancel
                     </button>
                     <button
-                      type="button"
-                      disabled={pinInput.length === 0}
-                      onClick={handleVerifyPin}
-                      className={`btn-arcade flex-1 py-2 text-xs font-black ${
-                        pinInput.length > 0 ? 'btn-arcade-gold' : 'bg-slate-800 text-slate-500 opacity-60'
+                      type="submit"
+                      disabled={!pinInput.trim()}
+                      className={`btn-arcade flex-1 py-2.5 text-xs font-black shadow-[2px_2px_0px_#000] ${
+                        pinInput.trim()
+                          ? 'btn-arcade-gold'
+                          : 'bg-slate-800 text-slate-500 opacity-60 cursor-not-allowed'
                       }`}
                     >
-                      Unlock Pack 🔓
+                      [ Unlock Pack ]
                     </button>
                   </div>
-                </div>
+                </form>
               )}
             </div>
           ) : (
@@ -231,7 +194,17 @@ export default function SoundPackModal({
                 return (
                   <div
                     key={pack.id}
+                    onClick={() => {
+                      if (!isHost) return;
+                      if (!isUnlocked) {
+                        handleOpenPinPrompt(pack);
+                      } else {
+                        handleDirectSelect(pack.id);
+                      }
+                    }}
                     className={`p-3.5 sm:p-4 rounded-2xl border-2 transition relative ${
+                      isHost ? 'cursor-pointer' : ''
+                    } ${
                       isSelected
                         ? 'bg-gradient-to-r from-amber-500/25 via-slate-900 to-amber-500/10 border-amber-400 shadow-[3px_3px_0px_#000]'
                         : 'bg-slate-900/90 border-black shadow-[2px_2px_0px_#000] hover:border-slate-700'
@@ -264,8 +237,9 @@ export default function SoundPackModal({
                             )}
                           </div>
 
-                          <h3 className="text-base sm:text-lg font-black text-white mt-1">
-                            {pack.name}
+                          <h3 className="text-base sm:text-lg font-black text-white mt-1 flex items-center gap-1.5">
+                            <span>{pack.name}</span>
+                            {!isUnlocked && <Lock size={14} className="text-amber-400 inline" />}
                           </h3>
 
                           <p className="text-xs text-slate-300 mt-0.5 line-clamp-2">
@@ -280,7 +254,7 @@ export default function SoundPackModal({
                       </div>
 
                       {/* Right Action */}
-                      <div className="shrink-0 pt-1">
+                      <div className="shrink-0 pt-1" onClick={(e) => e.stopPropagation()}>
                         {isSelected ? (
                           <div className="inline-flex items-center gap-1 bg-amber-400 text-black px-3 py-1.5 rounded-xl font-black text-xs border border-black shadow-[1px_1px_0px_#000]">
                             <Check size={14} />
@@ -292,8 +266,8 @@ export default function SoundPackModal({
                             onClick={() => handleOpenPinPrompt(pack)}
                             className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-[2px_2px_0px_#000]"
                           >
-                            <KeyRound size={13} />
-                            <span>Enter PIN</span>
+                            <Lock size={13} />
+                            <span>Unlock</span>
                           </button>
                         ) : isHost ? (
                           <button
@@ -340,10 +314,10 @@ export default function SoundPackModal({
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer - No PIN leaked */}
         <div className="pt-3 border-t border-white/10 flex items-center justify-between shrink-0">
           <span className="text-[11px] text-slate-400 font-semibold">
-            Pack 1: "Magyar" (PIN Code: 1535)
+            Protected Sound Packs • PIN Required
           </span>
 
           <button
@@ -354,7 +328,7 @@ export default function SoundPackModal({
             }}
             className="btn-arcade btn-arcade-dark py-2 px-4 text-xs font-bold"
           >
-            Done
+            Close
           </button>
         </div>
       </div>

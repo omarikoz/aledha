@@ -91,9 +91,33 @@ export default function App() {
       });
     });
 
-    peerNetwork.onPlayPlayerReveal((data) => {
+    // Universal audio reveal listener: Every connected player (speaker AND listeners) plays simultaneously
+    const handleUniversalAudioReveal = (data) => {
       setRevealAudioPayload(data);
-    });
+      const audioData = data?.audioData || data?.audioDataUrl || data?.recordedAudioUrl;
+      if (audioData) {
+        if (window.__activeRevealAudio) {
+          try {
+            window.__activeRevealAudio.pause();
+            window.__activeRevealAudio.src = '';
+          } catch (e) {}
+        }
+        try {
+          let playSrc = audioData;
+          if (typeof audioData === 'string' && !audioData.startsWith('data:') && !audioData.startsWith('blob:') && !audioData.startsWith('http')) {
+            playSrc = `data:${data.mimeType || 'audio/webm'};base64,${audioData}`;
+          }
+          const audio = new Audio(playSrc);
+          audio.volume = 1.0;
+          window.__activeRevealAudio = audio;
+          audio.play().catch((err) => console.error("Autoplay failed:", err));
+        } catch (err) {
+          console.error("Audio playback error:", err);
+        }
+      }
+    };
+
+    peerNetwork.onPlayPlayerReveal(handleUniversalAudioReveal);
 
     // Support local Socket.io if running local server daemon
     socket.on('room_update', (updatedRoom) => {
@@ -125,9 +149,8 @@ export default function App() {
     });
 
     // Universal audio reveal event (All players receive and play simultaneously)
-    socket.on('play_player_reveal', (data) => {
-      setRevealAudioPayload(data);
-    });
+    socket.on('play_player_reveal', handleUniversalAudioReveal);
+    socket.on('reveal_player_recording', handleUniversalAudioReveal);
 
     socket.on('game_aborted', (data) => {
       if (!peerNetwork.roomId) {
@@ -148,7 +171,8 @@ export default function App() {
     return () => {
       socket.off('room_update');
       socket.off('phase_change');
-      socket.off('play_player_reveal');
+      socket.off('play_player_reveal', handleUniversalAudioReveal);
+      socket.off('reveal_player_recording', handleUniversalAudioReveal);
       socket.off('game_aborted');
     };
   }, []);

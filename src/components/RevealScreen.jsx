@@ -151,6 +151,19 @@ export default function RevealScreen({
 
   // Synchronized audio broadcast playback: Play contestant take to EVERYONE in the room
   useEffect(() => {
+    // If audio is already active/playing from the synchronized reveal socket event
+    if (window.__activeRevealAudio && !window.__activeRevealAudio.paused) {
+      setIsPlayingAudio(true);
+      const handleEnded = () => setIsPlayingAudio(false);
+      window.__activeRevealAudio.addEventListener('ended', handleEnded);
+      return () => {
+        if (window.__activeRevealAudio) {
+          window.__activeRevealAudio.removeEventListener('ended', handleEnded);
+        }
+      };
+    }
+
+    // Direct playback for all players (both contestant & listeners)
     if (rawAudioSource) {
       playAudio(rawAudioSource, rawMimeType);
     }
@@ -254,11 +267,11 @@ export default function RevealScreen({
           </div>
         </div>
 
-        {/* Animated Soundwave Indicator & Replay Button */}
-        <div className="flex items-center justify-between gap-2 h-12 w-full max-w-xs mx-auto bg-slate-950/80 rounded-2xl border-2 border-black p-2.5 px-3">
-          <div className="flex items-center gap-1.5 flex-1 justify-center">
-            {isPlayingAudio ? (
-              Array.from({ length: 14 }).map((_, i) => (
+        {/* Animated Soundwave Indicator (100% Automatic - Zero manual buttons) */}
+        <div className="flex items-center justify-center gap-2 h-12 w-full max-w-xs mx-auto bg-slate-950/80 rounded-2xl border-2 border-black p-2.5 px-4 shadow-[2px_2px_0px_#000]">
+          {isPlayingAudio ? (
+            <div className="flex items-center gap-1.5 flex-1 justify-center">
+              {Array.from({ length: 14 }).map((_, i) => (
                 <div
                   key={i}
                   className="w-1.5 bg-gradient-to-t from-cyan-400 to-amber-400 rounded-full animate-pulse"
@@ -267,24 +280,13 @@ export default function RevealScreen({
                     animationDelay: `${i * 60}ms`
                   }}
                 />
-              ))
-            ) : (
-              <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
-                <Volume2 size={16} className="text-slate-500" />
-                <span>Voice Take Finished</span>
-              </div>
-            )}
-          </div>
-
-          {rawAudioSource && (
-            <button
-              type="button"
-              onClick={() => playAudio(rawAudioSource, rawMimeType)}
-              title="Replay Voice Take"
-              className="inline-flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-black px-2.5 py-1 rounded-xl font-black text-xs transition active:scale-95 shadow-[1px_1px_0px_#000] shrink-0"
-            >
-              <span>▶ Replay</span>
-            </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs font-bold text-slate-400 flex items-center justify-center gap-1.5">
+              <Volume2 size={16} className="text-cyan-400" />
+              <span>Voice Take Finished</span>
+            </div>
           )}
         </div>
 

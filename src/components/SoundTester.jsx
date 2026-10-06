@@ -124,8 +124,8 @@ export default function SoundTester({ isOpen, onClose }) {
               <span className="text-[10px] text-slate-400 block">{soundsList.length} Viral Audio Clips</span>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-            <Lock size={10} /> PIN: {activePack.pinCode}
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-950 text-slate-400 border border-white/10">
+            <Lock size={10} /> PIN Protected
           </span>
         </div>
 

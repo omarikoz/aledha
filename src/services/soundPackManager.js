@@ -36,7 +36,9 @@ class SoundPackManager {
   }
 
   getPackById(packId) {
-    const pack = this.packs.find((p) => p.id === packId) || this.packs[0];
+    if (!packId) return null;
+    const pack = this.packs.find((p) => p.id === packId);
+    if (!pack) return null;
     return {
       ...pack,
       isUnlocked: !pack.requiresPin || this.unlockedPacks.has(pack.id)

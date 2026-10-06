@@ -385,8 +385,8 @@ export default function Lobby({
 
         {/* Match Settings: Sound Pack Selection */}
         {(() => {
-          const selectedPackId = room.settings?.soundPack || 'pack_1';
-          const activePack = soundPackManager.getPackById(selectedPackId);
+          const selectedPackId = room.settings?.soundPack || null;
+          const activePack = selectedPackId ? soundPackManager.getPackById(selectedPackId) : null;
           return (
             <div className="bg-slate-900/80 border-2 border-black rounded-2xl p-3 shadow-[2px_2px_0px_#000]">
               <div className="flex items-center justify-between mb-2">
@@ -394,46 +394,80 @@ export default function Lobby({
                   <Package size={16} className="text-amber-400" />
                   <span className="text-xs font-black text-white">Sound Pack</span>
                 </div>
-                <span className="text-[11px] text-slate-400 font-bold">
-                  {activePack.title}: {activePack.name}
+                <span className={`text-[11px] font-bold ${activePack ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {activePack ? '✓ Selected' : 'Selection Required'}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-white/10">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-2xl">{activePack.emoji || '📦'}</span>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-black text-white">{activePack.name}</span>
-                      {activePack.requiresPin && (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          <Lock size={9} /> PIN: {activePack.pinCode}
-                        </span>
-                      )}
+              {!activePack ? (
+                <div className="flex flex-col sm:flex-row items-center justify-between p-3 rounded-xl bg-slate-950 border-2 border-dashed border-amber-500/40 gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center text-xl shrink-0">
+                      📦
                     </div>
-                    <span className="text-[10px] text-slate-400">
-                      {activePack.sounds?.length || 14} Sounds • Viral Memes & Vocals
-                    </span>
+                    <div>
+                      <span className="text-sm font-black text-amber-400 block">
+                        No Sound Pack Selected
+                      </span>
+                      <span className="text-[11px] text-slate-400 block">
+                        Host must choose an audio collection to enable starting the match
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {isHost ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundSynthesizer.playUiSound('click');
-                      setIsPackModalOpen(true);
-                    }}
-                    className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3 flex items-center gap-1 shadow-[2px_2px_0px_#000]"
-                  >
-                    <span>Change Pack</span>
-                  </button>
-                ) : (
-                  <span className="text-[11px] font-bold text-amber-300">
-                    Selected by Host
-                  </span>
-                )}
-              </div>
+                  {isHost ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundSynthesizer.playUiSound('click');
+                        setIsPackModalOpen(true);
+                      }}
+                      className="btn-arcade btn-arcade-gold text-xs sm:text-sm py-2 px-4 flex items-center gap-1.5 shadow-[2px_2px_0px_#000] w-full sm:w-auto justify-center shrink-0"
+                    >
+                      <Package size={15} />
+                      <span>Select Sound Pack</span>
+                    </button>
+                  ) : (
+                    <span className="text-xs font-bold text-slate-400">
+                      Waiting for host...
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl">{activePack.emoji || '📦'}</span>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-black text-white">{activePack.name}</span>
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          ✓ Unlocked
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400">
+                        {activePack.sounds?.length || 14} Sounds • Viral Memes & Vocals
+                      </span>
+                    </div>
+                  </div>
+
+                  {isHost ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        soundSynthesizer.playUiSound('click');
+                        setIsPackModalOpen(true);
+                      }}
+                      className="btn-arcade btn-arcade-dark text-xs py-1.5 px-3 flex items-center gap-1 shadow-[2px_2px_0px_#000]"
+                    >
+                      <span>Change Pack</span>
+                    </button>
+                  ) : (
+                    <span className="text-[11px] font-bold text-amber-300">
+                      Selected by Host
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -525,10 +559,24 @@ export default function Lobby({
           )}
         </div>
 
-        {/* Start Game Action Button - Strict Minimum 2 Players */}
+        {/* Start Game Action Button - Strict Sound Pack & Minimum 2 Players */}
         <div className="pt-2">
           {isHost ? (
-            currentPlayers.length < 2 ? (
+            !room.settings?.soundPack ? (
+              <div className="space-y-2">
+                <button
+                  disabled
+                  type="button"
+                  className="btn-arcade bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2 opacity-60 shadow-none"
+                >
+                  <Play size={20} className="fill-slate-500" />
+                  <span>Start Game 🔥</span>
+                </button>
+                <div className="text-center p-2.5 rounded-xl bg-amber-500/15 border-2 border-amber-500/30 text-amber-300 text-xs sm:text-sm font-bold">
+                  Host must select a Sound Pack before starting.
+                </div>
+              </div>
+            ) : currentPlayers.length < 2 ? (
               <div className="space-y-2">
                 <button
                   disabled
@@ -566,7 +614,9 @@ export default function Lobby({
                 Waiting for Host to start the match...
               </p>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                {currentPlayers.length < 2
+                {!room.settings?.soundPack
+                  ? 'Host must select a Sound Pack before starting.'
+                  : currentPlayers.length < 2
                   ? 'Waiting for at least 2 players to start (minimum 2 players)...'
                   : 'Get ready to mimic the sound on your mic!'}
               </p>
@@ -579,7 +629,7 @@ export default function Lobby({
       <SoundPackModal
         isOpen={isPackModalOpen}
         onClose={() => setIsPackModalOpen(false)}
-        selectedPackId={room.settings?.soundPack || 'pack_1'}
+        selectedPackId={room.settings?.soundPack || null}
         onSelectPack={(packId) => {
           if (onUpdateSettings) {
             onUpdateSettings({ soundPack: packId });

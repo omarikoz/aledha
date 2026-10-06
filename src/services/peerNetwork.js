@@ -148,7 +148,7 @@ class PeerNetwork {
         rounds: settings?.rounds || 3,
         category: settings?.category || 'all',
         gameMode: settings?.gameMode || 'player',
-        soundPack: settings?.soundPack || 'pack_1'
+        soundPack: settings?.soundPack || null
       },
       currentRound: 1,
       totalRounds: settings?.rounds || 3,
@@ -414,9 +414,10 @@ class PeerNetwork {
     this.notifyRoomUpdate();
   }
 
-  // Host starts the game - Strict Minimum 2 Players!
+  // Host starts the game - Strict Minimum 2 Players & Sound Pack Required!
   startGame() {
     if (!this.isHost || !this.room) return;
+    if (!this.room.settings?.soundPack) return; // Cannot start without sound pack
     if (this.room.players.length < 2) return; // Strict minimum 2 players
 
     this.room.currentRound = 1;

@@ -225,14 +225,16 @@ function startContestantVoting(room, index) {
   room.timer = 0;
   broadcastRoom(room.id);
 
-  // CRITICAL FIX: Broadcast play_player_reveal to ALL players (including active contestant)
+  // Broadcast reveal audio payload to ALL players (including active contestant)
   const contestantAudioData = currentRec.audioData || currentRec.audioDataUrl || currentRec.recordedAudioUrl;
-  io.to(room.id).emit('play_player_reveal', {
+  const revealPayload = {
     playerId: currentRec.playerId,
     playerName: currentRec.playerName,
     audioData: contestantAudioData,
     mimeType: currentRec.mimeType || 'audio/webm'
-  });
+  };
+  io.to(room.id).emit('play_player_reveal', revealPayload);
+  io.to(room.id).emit('reveal_player_recording', revealPayload);
 
   runCountdown(room, 3, null, () => {
     if (isAiMode) {
@@ -351,7 +353,7 @@ io.on('connection', (socket) => {
         duration: settings?.duration || 3.5,
         category: settings?.category || 'all',
         gameMode: settings?.gameMode || 'player',
-        soundPack: settings?.soundPack || 'pack_1'
+        soundPack: settings?.soundPack || null
       },
       currentRound: 1,
       roundSound: null,
@@ -443,10 +445,14 @@ io.on('connection', (socket) => {
     broadcastRoom(roomId);
   });
 
-  // Start Game - Strict Minimum 2 Players!
+  // Start Game - Strict Minimum 2 Players & Sound Pack Required!
   socket.on('start_game', ({ roomId }) => {
     const room = rooms.get(roomId);
     if (!room || room.hostId !== socket.id) return;
+
+    if (!room.settings?.soundPack) {
+      return; // Cannot start without a selected Sound Pack
+    }
 
     if (room.players.size < 2) {
       return; // Must have at least 2 players to start peer voting
