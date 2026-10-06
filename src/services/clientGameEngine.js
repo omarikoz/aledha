@@ -279,11 +279,8 @@ class ClientGameEngine {
       isAI: false,
       recordedAudioUrl: audioUrl,
       audioDataUrl: audioUrl,
-      score: recordingData.score,
-      rhythmScore: recordingData.rhythmScore,
-      pitchScore: recordingData.pitchScore,
-      energyScore: recordingData.energyScore,
-      tier: recordingData.tier || audioEngine.getEgyptianRatingTier(recordingData.score)
+      votes: {},
+      score: null
     };
 
     const existingIdx = this.room.recordings.findIndex(r => r.playerId === this.humanPlayer.id);
@@ -313,11 +310,8 @@ class ClientGameEngine {
         isAI: false,
         recordedAudioUrl: this.humanPlayer.recordedAudioUrl || null,
         audioDataUrl: null,
-        score: 30,
-        rhythmScore: 25,
-        pitchScore: 30,
-        energyScore: 35,
-        tier: audioEngine.getEgyptianRatingTier(30)
+        votes: {},
+        score: null
       });
     }
 
@@ -347,11 +341,8 @@ class ClientGameEngine {
           isAI: true,
           recordedAudioUrl: null,
           audioDataUrl: null,
-          score,
-          rhythmScore,
-          pitchScore,
-          energyScore,
-          tier: audioEngine.getEgyptianRatingTier(score)
+          votes: {},
+          score: null
         });
       }
     }

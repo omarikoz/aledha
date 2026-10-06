@@ -496,24 +496,41 @@ export default function Lobby({
           )}
         </div>
 
-        {/* Start Game Action Button */}
+        {/* Start Game Action Button - Strict Minimum 2 Players */}
         <div className="pt-2">
           {isHost ? (
-            <button
-              onClick={async () => {
-                if (!micVerified) {
-                  const ok = await handleCheckAndInitMic();
-                  if (!ok) return;
-                }
-                soundSynthesizer.playUiSound('go');
-                if (onRequestMic) onRequestMic();
-                onStartGame();
-              }}
-              className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
-            >
-              <Play size={20} className="fill-black" />
-              <span>ابدأ اللعبة (Start Game) 🔥</span>
-            </button>
+            currentPlayers.length < 2 ? (
+              <div className="space-y-2">
+                <button
+                  disabled
+                  type="button"
+                  className="btn-arcade bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 opacity-60 shadow-none"
+                >
+                  <Play size={20} className="fill-slate-500" />
+                  <span>ابدأ اللعبة (Start Game) 🔥</span>
+                </button>
+                <div className="text-center p-2.5 rounded-xl bg-amber-500/15 border-2 border-amber-500/30 text-amber-300 text-xs sm:text-sm font-bold font-cairo animate-pulse">
+                  في انتظار لاعب آخر على الأقل للبدء (الحد الأدنى ٢ لاعبين) ⏳
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!micVerified) {
+                    const ok = await handleCheckAndInitMic();
+                    if (!ok) return;
+                  }
+                  soundSynthesizer.playUiSound('go');
+                  if (onRequestMic) onRequestMic();
+                  onStartGame();
+                }}
+                className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
+              >
+                <Play size={20} className="fill-black" />
+                <span>ابدأ اللعبة (Start Game) 🔥</span>
+              </button>
+            )
           ) : (
             <div className="text-center p-3.5 bg-slate-900/90 border-2 border-black rounded-xl shadow-[2px_2px_0px_#000]">
               <div className="inline-block animate-pulse text-xl mb-1">⏳</div>
@@ -521,7 +538,9 @@ export default function Lobby({
                 Waiting for Host to start the match...
               </p>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Get ready to make the sound on your phone!
+                {currentPlayers.length < 2
+                  ? 'في انتظار لاعب آخر على الأقل للبدء (الحد الأدنى ٢ لاعبين)'
+                  : 'Get ready to make the sound on your phone!'}
               </p>
             </div>
           )}

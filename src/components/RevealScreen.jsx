@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Volume2, Play, Pause, ChevronRight, Trophy, Sparkles } from 'lucide-react';
+import { Volume2, Sparkles, Check, Users } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import CharacterAvatar from './CharacterAvatar.jsx';
 
@@ -7,56 +7,44 @@ export default function RevealScreen({
   room,
   player,
   localRecordedAudioUrl,
-  onNextRevealStep
+  onVote
 }) {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [voteValue, setVoteValue] = useState(75);
+  const [hasVoted, setHasVoted] = useState(false);
   const audioRef = useRef(null);
 
-  const sound = room?.roundSound;
   const recordings = room?.recordings || [];
   const revealIndex = Math.max(0, room?.revealIndex || 0);
+  const revealPhase = room?.revealPhase || 'VOTING'; // 'VOTING' or 'RESULT'
+  const timer = room?.timer ?? 0;
 
-  // Robust fallback contestant record to guarantee screen is NEVER blank
-  const fallbackRec = {
-    playerId: player?.id || 'player-1',
-    playerName: player?.name || 'Player',
-    avatar: player?.avatar || '👑',
-    character: player?.character || null,
-    score: 65,
-    rhythmScore: 65,
-    pitchScore: 60,
-    energyScore: 70,
-    tier: {
-      badge: "مش بطال، سامع المحاولة 👏",
-      badgeEn: "Not Bad, We Hear The Effort! 👏",
-      color: "#F59E0B",
-      reaction: "مش بطال، سامع المحاولة والروح كانت عالية 👏"
-    },
-    recordedAudioUrl: localRecordedAudioUrl,
-    audioDataUrl: localRecordedAudioUrl
-  };
+  const currentRec = recordings[revealIndex] || recordings[0] || null;
 
-  const currentRec = recordings[revealIndex] || recordings[0] || fallbackRec;
-  const isHost = Boolean(
-    player?.isHost ||
-    (room?.hostId && player?.id && room.hostId === player.id) ||
-    !room?.players ||
-    room?.players?.length <= 1
-  );
-  const isLastPlayer = revealIndex >= recordings.length - 1;
-
-  // Match contestant character profile
+  // Active contestant info
+  const isCurrentUser = currentRec?.playerId === player?.id;
   const contestantPlayer = (room?.players || []).find(p => p.id === currentRec?.playerId);
   const contestantCharacter = currentRec?.character || contestantPlayer?.character || null;
 
-  // Resolve audio source: Human mic blob/dataUrl vs Bot procedural sound
-  const isCurrentUser = currentRec?.playerId === player?.id;
-  const isAI = Boolean(currentRec?.isBot || currentRec?.isAI);
   const humanAudioSource = (isCurrentUser && localRecordedAudioUrl)
     || currentRec?.audioDataUrl
     || currentRec?.recordedAudioUrl;
 
-  // Auto-play contestant's recorded audio once when revealed
+  // Reset vote state when contestant changes
+  useEffect(() => {
+    setHasVoted(false);
+    setVoteValue(75);
+  }, [revealIndex]);
+
+  // Check if player has already voted in room state
+  useEffect(() => {
+    if (currentRec?.votes && player?.id && currentRec.votes[player.id] !== undefined) {
+      setHasVoted(true);
+      setVoteValue(currentRec.votes[player.id]);
+    }
+  }, [currentRec?.votes, player?.id]);
+
+  // Synchronized audio playback: automatically play contestant take once on reveal
   useEffect(() => {
     setIsPlayingAudio(false);
 
@@ -68,11 +56,10 @@ export default function RevealScreen({
       audioRef.current = null;
     }
 
-    if (currentRec && !isAI && humanAudioSource) {
+    if (humanAudioSource) {
       try {
         const audio = new Audio(humanAudioSource);
         audio.volume = 1.0;
-        audio.muted = false;
         audioRef.current = audio;
         setIsPlayingAudio(true);
 
@@ -87,7 +74,6 @@ export default function RevealScreen({
         audio.onended = () => setIsPlayingAudio(false);
         audio.onerror = () => setIsPlayingAudio(false);
       } catch (e) {
-        console.warn('Failed to initialize Audio for mic recording:', e);
         setIsPlayingAudio(false);
       }
     }
@@ -102,74 +88,49 @@ export default function RevealScreen({
         audioRef.current = null;
       }
     };
-  }, [revealIndex, currentRec?.playerId, humanAudioSource, isAI]);
+  }, [revealIndex, humanAudioSource]);
 
-  // Replay contestant vocal take
-  const handleTogglePlay = () => {
+  const handleCastVote = () => {
+    if (hasVoted || isCurrentUser) return;
     soundSynthesizer.playUiSound('click');
-    if (isPlayingAudio) {
-      soundSynthesizer.stopAll();
-      if (audioRef.current) {
-        try { audioRef.current.pause(); } catch (e) {}
-      }
-      setIsPlayingAudio(false);
-    } else {
-      if (!isAI && humanAudioSource) {
-        const audio = new Audio(humanAudioSource);
-        audio.volume = 1.0;
-        audio.muted = false;
-        audioRef.current = audio;
-        setIsPlayingAudio(true);
-        const p = audio.play();
-        if (p !== undefined) {
-          p.catch(() => setIsPlayingAudio(false));
-        }
-        audio.onended = () => setIsPlayingAudio(false);
-        audio.onerror = () => setIsPlayingAudio(false);
-      }
+    setHasVoted(true);
+    if (onVote) {
+      onVote(voteValue);
     }
   };
 
-  // If recordings list is empty or invalid, show a recovery screen with button so page is never blank
   if (!currentRec) {
     return (
-      <div className="w-full max-w-md mx-auto px-4 py-8 text-center">
-        <div className="arcade-card">
-          <div className="text-4xl animate-bounce mb-3">🎙️</div>
-          <h3 className="text-xl font-bold text-amber-400 mb-2">Preparing Vocal Reveals...</h3>
-          <p className="text-slate-300 text-sm mb-4">Collecting sound submissions from all players.</p>
-          {isHost && (
-            <button
-              onClick={() => {
-                soundSynthesizer.playUiSound('go');
-                onNextRevealStep();
-              }}
-              className="btn-arcade btn-arcade-gold w-full text-base py-3"
-            >
-              <span>Continue to Scores ⏭️</span>
-            </button>
-          )}
-        </div>
+      <div className="w-full max-w-md mx-auto px-4 py-8 text-center arcade-card">
+        <div className="text-4xl animate-bounce mb-3">🎙️</div>
+        <h3 className="text-xl font-bold text-amber-400 mb-2">Preparing Contestant Takes...</h3>
+        <p className="text-slate-300 text-sm">Synchronizing audio submissions across all players.</p>
       </div>
     );
   }
 
+  const votesMap = currentRec.votes || {};
+  const totalVotesCount = Object.keys(votesMap).length;
+  const eligibleVotersCount = Math.max(1, (room?.players?.length || 2) - 1);
+
   return (
-    <div className="w-full max-w-2xl mx-auto px-3 sm:px-4 py-4">
-      <div className="arcade-card relative overflow-hidden text-center">
-        {/* Header Indicator */}
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10 text-xs font-bold text-slate-300">
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={16} className="text-amber-400" />
-            <span>Sound Score & Feedback</span>
+    <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-4 select-none">
+      <div className="arcade-card relative overflow-hidden text-center space-y-4">
+        {/* Top Header Tracker */}
+        <div className="flex items-center justify-between pb-2 border-b border-white/10 text-xs font-bold text-slate-300">
+          <div className="flex items-center gap-1.5 text-amber-400">
+            <Sparkles size={15} />
+            <span>Contestant {revealIndex + 1} of {recordings.length}</span>
           </div>
-          <div className="bg-slate-900 border border-white/10 px-3 py-1 rounded-full text-amber-300 font-mono">
-            Contestant {revealIndex + 1} of {Math.max(1, recordings.length)}
+
+          <div className="flex items-center gap-1 bg-slate-900 px-3 py-1 rounded-full border border-white/10 text-cyan-400 font-mono text-xs">
+            <span>⏳</span>
+            <span>{timer}s</span>
           </div>
         </div>
 
-        {/* Player & Animated Caricature Avatar */}
-        <div className="flex flex-col items-center justify-center my-3">
+        {/* Center: Contestant Avatar & Stage Name */}
+        <div className="flex flex-col items-center justify-center pt-2">
           <CharacterAvatar
             avatar={currentRec.avatar || contestantCharacter?.avatar || '👑'}
             name={currentRec.playerName}
@@ -178,8 +139,10 @@ export default function RevealScreen({
             size="xl"
           />
 
-          <div className="flex items-center gap-2 mt-2">
-            <h3 className="text-xl sm:text-2xl font-black text-white">{currentRec.playerName}</h3>
+          <div className="flex items-center gap-2 mt-3">
+            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              {currentRec.playerName}
+            </h3>
             {isCurrentUser && (
               <span className="text-[10px] bg-amber-400 text-black px-2 py-0.5 rounded-full font-black">
                 YOU
@@ -188,146 +151,140 @@ export default function RevealScreen({
           </div>
 
           {contestantCharacter && (
-            <div className="text-xs text-amber-300 font-bold font-cairo mt-1">
-              "{contestantCharacter.quote || contestantCharacter.role}"
+            <div className="text-xs text-amber-300 font-bold font-cairo mt-0.5">
+              "{contestantCharacter.nameAr || contestantCharacter.name}"
             </div>
           )}
         </div>
 
-        {/* Listen / Replay Audio Button */}
-        <div className="my-3">
-          <button
-            onClick={handleTogglePlay}
-            className={`btn-arcade py-2.5 px-6 text-xs sm:text-sm inline-flex items-center gap-2 ${
-              isPlayingAudio ? 'btn-arcade-dark border-emerald-400' : 'btn-arcade-gold'
-            }`}
-          >
-            {isPlayingAudio ? <Pause size={17} /> : <Volume2 size={17} />}
-            <span>
-              {isPlayingAudio
-                ? 'Listening to Vocal Take... 🔊'
-                : isCurrentUser
-                ? 'Replay Your Mic Recording 🎧'
-                : `Replay ${currentRec.playerName}'s Take 🎧`}
-            </span>
-          </button>
-        </div>
-
-        {/* Big Score Card */}
-        <div className="relative my-3 p-4 sm:p-5 rounded-3xl bg-slate-950/80 border-3 border-black shadow-[4px_4px_0px_#000]">
-          <div className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">
-            Egyptian Audio Similarity Accuracy
-          </div>
-
-          {/* Big Score Number */}
-          <div className="flex items-baseline justify-center gap-1 my-1">
-            <span
-              className="font-display font-black text-5xl sm:text-7xl"
-              style={{ color: currentRec.tier?.color || '#fbbf24' }}
-            >
-              {currentRec.score ?? 50}
-            </span>
-            <span className="text-xl sm:text-2xl font-black text-slate-400">/ 100</span>
-          </div>
-
-          {/* Egyptian Badge */}
-          <div className="my-2">
-            <span
-              className="arcade-badge text-sm sm:text-base py-1 px-4 text-black font-black"
-              style={{ backgroundColor: currentRec.tier?.color || '#fbbf24' }}
-            >
-              {currentRec.tier?.badge || 'مش بطال، سامع المحاولة 👏'}
-            </span>
-          </div>
-
-          {/* Egyptian Reaction Commentary */}
-          <p className="text-amber-200/90 text-xs sm:text-sm font-bold mt-2 px-3 italic">
-            "{currentRec.tier?.reaction || 'مش بطال، سامع المحاولة والروح كانت عالية 👏'}"
-          </p>
-        </div>
-
-        {/* Pitch, Rhythm & Timing Gauges */}
-        <div className="grid grid-cols-3 gap-2 my-4 text-left">
-          {/* Pitch */}
-          <div className="bg-slate-900/90 p-2 sm:p-2.5 rounded-2xl border-2 border-black shadow-[2px_2px_0px_#000]">
-            <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold text-slate-300 mb-1">
-              <span>🎯 Pitch</span>
-              <span className="text-cyan-400 font-mono">{currentRec.pitchScore || 70}%</span>
-            </div>
-            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-black">
+        {/* Animated Soundwave Indicator while playing */}
+        <div className="flex items-center justify-center gap-1.5 h-12 w-full max-w-xs mx-auto bg-slate-950/80 rounded-2xl border-2 border-black p-2.5">
+          {isPlayingAudio ? (
+            Array.from({ length: 14 }).map((_, i) => (
               <div
-                className="h-full bg-cyan-400 transition-all duration-700"
-                style={{ width: `${currentRec.pitchScore || 70}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Rhythm */}
-          <div className="bg-slate-900/90 p-2 sm:p-2.5 rounded-2xl border-2 border-black shadow-[2px_2px_0px_#000]">
-            <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold text-slate-300 mb-1">
-              <span>⏱️ Rhythm</span>
-              <span className="text-amber-400 font-mono">{currentRec.rhythmScore || 65}%</span>
-            </div>
-            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-black">
-              <div
-                className="h-full bg-amber-400 transition-all duration-700"
-                style={{ width: `${currentRec.rhythmScore || 65}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Timing */}
-          <div className="bg-slate-900/90 p-2 sm:p-2.5 rounded-2xl border-2 border-black shadow-[2px_2px_0px_#000]">
-            <div className="flex justify-between items-center text-[10px] sm:text-xs font-bold text-slate-300 mb-1">
-              <span>⚡ Timing</span>
-              <span className="text-pink-400 font-mono">{currentRec.energyScore || 80}%</span>
-            </div>
-            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-black">
-              <div
-                className="h-full bg-pink-400 transition-all duration-700"
-                style={{ width: `${currentRec.energyScore || 80}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Host Explicit Next Contestant Controls */}
-        <div className="mt-4 pt-3 border-t border-white/10">
-          {isHost ? (
-            <button
-              onClick={() => {
-                soundSynthesizer.playUiSound('go');
-                onNextRevealStep();
-              }}
-              className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
-            >
-              <span>
-                {isLastPlayer
-                  ? 'View Leaderboard 🏆 (عرض النتائج)'
-                  : 'Next Contestant ⏭️ (المتسابق التالي)'}
-              </span>
-              <ChevronRight size={20} />
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <div className="text-center p-2.5 bg-slate-900/90 border border-white/10 rounded-2xl">
-                <span className="text-xs sm:text-sm font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                  <span>⏳</span>
-                  <span>Waiting for Host to advance to the next contestant...</span>
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  soundSynthesizer.playUiSound('click');
-                  onNextRevealStep();
+                key={i}
+                className="w-1.5 bg-gradient-to-t from-cyan-400 to-amber-400 rounded-full animate-pulse"
+                style={{
+                  height: `${Math.max(25, Math.sin(i * 0.8 + Date.now() / 180) * 80 + 20)}%`,
+                  animationDelay: `${i * 60}ms`
                 }}
-                className="w-full text-center text-xs text-slate-400 hover:text-white underline font-bold py-1 transition"
-              >
-                Skip / Continue ⏩
-              </button>
+              />
+            ))
+          ) : (
+            <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+              <Volume2 size={16} className="text-slate-500" />
+              <span>Voice Take Finished</span>
             </div>
           )}
         </div>
+
+        {/* SECTION A: VOTING PHASE */}
+        {revealPhase === 'VOTING' && (
+          <div className="mt-4 p-4 rounded-3xl bg-slate-950/90 border-2 border-black shadow-[3px_3px_0px_#000] text-center">
+            {isCurrentUser ? (
+              // Active Contestant View (Cannot vote for self)
+              <div className="py-4 space-y-2">
+                <div className="text-3xl animate-bounce">🎙️</div>
+                <h4 className="text-base sm:text-lg font-black text-amber-400">
+                  اللاعبون الآخرون يقيمون صوتك الآن ⏳
+                </h4>
+                <p className="text-xs text-slate-400 font-bold">
+                  Other players are rating your take (1 to 100)...
+                </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-white/10 text-xs font-mono font-bold text-emerald-400 mt-2">
+                  <Users size={14} />
+                  <span>{totalVotesCount} / {eligibleVotersCount} Voted</span>
+                </div>
+              </div>
+            ) : (
+              // Other Players View: 1 to 100 Voting Slider
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-300">
+                    Rate {currentRec.playerName}'s Sound:
+                  </span>
+                  <span className="font-display font-black text-3xl text-amber-400">
+                    {voteValue}
+                    <span className="text-xs font-bold text-slate-400"> / 100</span>
+                  </span>
+                </div>
+
+                {/* 1 to 100 Slider */}
+                <div className="space-y-2">
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    disabled={hasVoted}
+                    value={voteValue}
+                    onChange={(e) => setVoteValue(Number(e.target.value))}
+                    className="w-full h-3 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-amber-400 border border-black"
+                  />
+
+                  {/* Preset Quick Buttons */}
+                  {!hasVoted && (
+                    <div className="grid grid-cols-4 gap-2 pt-1">
+                      {[25, 50, 75, 100].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setVoteValue(val)}
+                          className={`py-1 rounded-xl text-xs font-black border border-black transition ${
+                            voteValue === val
+                              ? 'bg-amber-400 text-black'
+                              : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Submit Vote Button */}
+                {hasVoted ? (
+                  <div className="p-3 rounded-2xl bg-emerald-500/20 border-2 border-emerald-500 text-emerald-400 font-black text-sm flex items-center justify-center gap-2">
+                    <Check size={18} />
+                    <span>تم تسجيل صوتك ({voteValue} / 100) ✅</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCastVote}
+                    className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3 flex items-center justify-center gap-2 shadow-[2px_2px_0px_#000]"
+                  >
+                    <span>صوّت (Submit Vote) 🗳️</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SECTION B: RESULT REVEAL PHASE */}
+        {revealPhase === 'RESULT' && (
+          <div className="mt-4 p-5 rounded-3xl bg-slate-950/95 border-3 border-amber-400 shadow-[4px_4px_0px_#000] text-center animate-bounce-in space-y-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+              متوسط تقييم اللاعبين (Peer Voted Score)
+            </span>
+
+            {/* Prominent Average Score Display */}
+            <div className="flex items-baseline justify-center gap-1.5 my-2">
+              <span className="font-display font-black text-6xl sm:text-7xl text-amber-400">
+                {currentRec.score ?? 50}
+              </span>
+              <span className="text-2xl font-black text-slate-500">/ 100</span>
+            </div>
+
+            <div className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1.5">
+              <span>🌟</span>
+              <span>
+                Based on {totalVotesCount} {totalVotesCount === 1 ? 'player vote' : 'player votes'}!
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

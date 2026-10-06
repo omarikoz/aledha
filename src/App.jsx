@@ -157,13 +157,13 @@ export default function App() {
     }
   }, [room?.id]);
 
-  // Reveal Step
-  const handleNextRevealStep = () => {
+  // Peer Vote Submit
+  const handleVote = (score) => {
     if (!room?.id) return;
     if (peerNetwork.roomId) {
-      peerNetwork.nextRevealStep();
+      peerNetwork.submitVote(score);
     } else {
-      socket.emit('next_reveal_step', { roomId: room.id });
+      socket.emit('submit_vote', { roomId: room.id, score });
     }
   };
 
@@ -252,7 +252,7 @@ export default function App() {
             room={room}
             player={player}
             localRecordedAudioUrl={localRecordedAudioUrl}
-            onNextRevealStep={handleNextRevealStep}
+            onVote={handleVote}
           />
         ) : room.state === 'LEADERBOARD' ? (
           <Leaderboard

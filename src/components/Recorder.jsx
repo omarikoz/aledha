@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mic, CheckCircle2, AlertCircle } from 'lucide-react';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import CharacterAvatar from './CharacterAvatar.jsx';
@@ -13,7 +13,6 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   const animFrameRef = useRef(null);
   const recordedSoundIdRef = useRef(null);
 
-  // Keep latest onSubmitRecording in a stable ref so re-renders don't cancel recording session
   const onSubmitRef = useRef(onSubmitRecording);
   useEffect(() => {
     onSubmitRef.current = onSubmitRecording;
@@ -28,22 +27,21 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
     let isMounted = true;
     audioEngine.unlockAudioContext();
 
-    // Clamp recording strictly to 2.5s - 5.0s so it finishes before the 6-9s room countdown!
-    const durationMs = Math.min(5000, Math.max(2500, Math.ceil((sound?.duration || 3.5) * 1000)));
+    // Duration: 4 seconds
+    const durationMs = Math.min(4500, Math.max(2500, Math.ceil((sound?.duration || 3.5) * 1000)));
 
     const startRecordingSession = async () => {
       try {
         setIsCapturing(true);
         soundSynthesizer.playUiSound('go');
 
-        // 1. Ensure microphone stream is active & setup analyser
         const stream = await audioEngine.initMicrophone();
         if (!stream) {
-          throw new Error('Microphone permission required! Please allow mic access.');
+          throw new Error('Microphone permission required! Please enable mic.');
         }
         const liveAnalyser = audioEngine.setupAnalyser(stream);
 
-        // 2. Start live visualizer on canvas
+        // Visualizer
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
@@ -70,7 +68,7 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
               currentRms = Math.sqrt(sumSquares / bufferLength);
 
               ctx.lineWidth = 3;
-              ctx.strokeStyle = currentRms > 0.02 ? '#06b6d4' : '#fbbf24'; // Cyan on speech, gold idle
+              ctx.strokeStyle = currentRms > 0.02 ? '#06b6d4' : '#fbbf24';
               ctx.beginPath();
 
               const sliceWidth = (canvas.width * 1.0) / bufferLength;
@@ -78,7 +76,7 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
 
               for (let i = 0; i < bufferLength; i++) {
                 const norm = (dataArray[i] - 128) / 128.0;
-                const amp = norm * 7.0;
+                const amp = norm * 6.5;
                 const y = Math.max(4, Math.min(canvas.height - 4, centerY + (amp * (centerY - 6))));
                 if (i === 0) {
                   ctx.moveTo(x, y);
@@ -105,10 +103,7 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
           renderVisualizer();
         }
 
-        // 3. Fetch reference audio buffer in parallel without blocking recording
-        const refBufferPromise = soundSynthesizer.getReferenceAudioBuffer(sound).catch(() => null);
-
-        // 4. Record user audio for durationMs
+        // Record audio
         const userRec = await audioEngine.recordAudio(durationMs, (volume) => {
           if (isMounted) setMicVolume((v) => Math.max(v, volume));
         });
@@ -117,39 +112,22 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         setIsCapturing(false);
         setHasRecorded(true);
 
-        // Await reference sound buffer for deterministic scoring
-        const refBuffer = await refBufferPromise;
-
-        // Score recording against target Egyptian sound
-        const scoreResult = audioEngine.scoreRecording(userRec.audioBuffer, refBuffer);
-
-        // Submit recording data immediately
+        // Submit audio directly to room for peer voting (no algorithmic scoring)
         if (onSubmitRef.current) {
           onSubmitRef.current({
             recordedAudioUrl: userRec.objectUrl,
-            audioDataUrl: userRec.dataUrl,
-            score: scoreResult.totalScore,
-            rhythmScore: scoreResult.rhythmScore,
-            pitchScore: scoreResult.pitchScore,
-            energyScore: scoreResult.energyScore,
-            tier: scoreResult.tier
+            audioDataUrl: userRec.dataUrl
           });
         }
       } catch (err) {
-        console.error('Recording session error:', err);
+        console.error('Recording error:', err);
         if (isMounted) {
           setMicError(err.message || 'Microphone error occurred');
           setIsCapturing(false);
-          // Fallback submission if mic failed
           if (onSubmitRef.current) {
             onSubmitRef.current({
               recordedAudioUrl: null,
-              audioDataUrl: null,
-              score: 35,
-              rhythmScore: 30,
-              pitchScore: 35,
-              energyScore: 40,
-              tier: audioEngine.getEgyptianRatingTier(35)
+              audioDataUrl: null
             });
           }
         }
@@ -168,104 +146,79 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   return (
     <div
       onClick={() => audioEngine.unlockAudioContext()}
-      className="w-full max-w-xl mx-auto px-3 py-4 text-center cursor-pointer select-none"
+      className="w-full max-w-lg mx-auto px-4 py-6 text-center select-none"
     >
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
-        {/* Pulsing Header */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
+        {/* Clean Pulsing Recording Badge */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
           <span>🔴 RECORDING: SAY IT NOW! (قَلِّدْهَا)</span>
         </div>
 
-        <h2 className="text-2xl sm:text-4xl font-black text-amber-400 mb-1 tracking-tight">
-          Sound: {sound.name}
+        {/* Sound Title */}
+        <h2 className="text-2xl sm:text-3xl font-black text-amber-400 mb-0.5 tracking-tight">
+          {sound.name}
         </h2>
         {sound.nameAr && (
-          <p className="text-sm font-bold text-amber-200/80 font-cairo mb-2">
+          <p className="text-sm font-bold text-amber-200/80 font-cairo mb-3">
             ({sound.nameAr})
           </p>
         )}
-        <p className="text-xs sm:text-sm font-bold text-slate-300 mb-3">
-          Speak and make the sound directly into your phone microphone!
-        </p>
 
-        {/* Live Audio Visualizer Canvas */}
-        <div className="w-full max-w-sm sm:max-w-md my-2 relative">
+        {/* Live Audio Scope */}
+        <div className="w-full max-w-sm my-2 relative">
           <canvas
             ref={canvasRef}
-            width={360}
-            height={100}
-            className="visualizer-canvas w-full rounded-xl"
+            width={340}
+            height={80}
+            className="visualizer-canvas w-full rounded-2xl"
           />
-          <div className="absolute top-2 left-3 text-[10px] font-mono font-bold text-amber-300/80 bg-black/60 px-2 py-0.5 rounded border border-white/10">
-            Live Audio Scope
-          </div>
         </div>
 
-        {/* Real-time Mic Input Level Meter */}
-        <div className="w-full max-w-md my-3 bg-slate-950/80 p-3 rounded-xl border-2 border-black">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-300 mb-1.5">
-            <span className="flex items-center gap-1.5">
-              <Activity size={15} className="text-cyan-400" />
-              <span>Mic Sensitivity:</span>
-            </span>
-            <span className={micVolume > 0.1 ? 'text-emerald-400' : 'text-slate-400'}>
-              {micVolume > 0.1 ? 'Voice detected loud & clear! 🔊' : 'Make sound into your mic...'}
-            </span>
-          </div>
-          <div className="w-full h-3.5 bg-slate-900 rounded-full overflow-hidden border border-black flex">
-            <div
-              className={`h-full transition-all duration-75 rounded-full ${
-                micVolume > 0.7
-                  ? 'bg-red-500'
-                  : micVolume > 0.3
-                  ? 'bg-gradient-to-r from-emerald-400 to-amber-400'
-                  : 'bg-emerald-400'
-              }`}
-              style={{ width: `${Math.min(100, Math.max(5, micVolume * 100))}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Character Avatar with Talking Bounce */}
-        <div className="my-2 flex items-center justify-center gap-4">
+        {/* Avatar & Big Mic Icon */}
+        <div className="my-3 flex items-center justify-center gap-4">
           <CharacterAvatar
             avatar={player?.avatar || '👑'}
             name={player?.name || 'You'}
             character={player?.character}
-            isTalking={micVolume > 0.1}
+            isTalking={micVolume > 0.08}
             size="lg"
           />
 
           <div
-            className={`w-24 h-24 rounded-full border-4 border-black flex items-center justify-center transition-all duration-200 shadow-[5px_5px_0px_#000] ${
+            className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-black flex items-center justify-center transition-all duration-200 shadow-[4px_4px_0px_#000] ${
               isCapturing
-                ? 'bg-gradient-to-br from-red-500 to-pink-600 scale-110 animate-pulse'
+                ? 'bg-gradient-to-br from-red-500 to-pink-600 scale-105 animate-pulse'
                 : 'bg-emerald-500 text-black'
             }`}
           >
             {hasRecorded ? (
-              <CheckCircle2 size={46} className="text-black" />
+              <CheckCircle2 size={42} className="text-black" />
             ) : (
-              <Mic size={46} className="text-white" />
+              <Mic size={42} className="text-white" />
             )}
           </div>
         </div>
 
-        {/* Status Text */}
+        {/* Simple Large Countdown / Status */}
         {hasRecorded ? (
-          <div className="text-emerald-400 font-black text-lg mt-2 flex items-center gap-2">
-            <span>Recording captured! Collecting all players...</span>
+          <div className="text-emerald-400 font-black text-base mt-2 flex items-center gap-2">
+            <span>✅ Recording submitted! Preparing reveals...</span>
           </div>
         ) : (
-          <div className="text-amber-300 font-extrabold text-lg mt-2">
-            {timer}s remaining in recording window!
+          <div className="mt-2 text-center">
+            <span className="text-3xl font-black font-display text-amber-400 block">
+              {timer}s
+            </span>
+            <span className="text-xs font-bold text-slate-400">
+              Speak clearly into your microphone!
+            </span>
           </div>
         )}
 
         {micError && (
-          <div className="mt-4 p-3 bg-red-950/70 border border-red-500 rounded-xl text-red-200 text-xs font-bold flex items-center gap-2">
-            <AlertCircle size={16} />
+          <div className="mt-3 p-2.5 bg-red-950/70 border border-red-500 rounded-xl text-red-200 text-xs font-bold flex items-center gap-2">
+            <AlertCircle size={15} />
             <span>{micError}</span>
           </div>
         )}

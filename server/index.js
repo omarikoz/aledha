@@ -5,7 +5,6 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getEgyptianTier, generateBotAttempt } from './audioScoring.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +63,7 @@ function broadcastRoom(roomId) {
     id: room.id,
     hostId: room.hostId,
     state: room.state,
+    revealPhase: room.revealPhase,
     settings: room.settings,
     currentRound: room.currentRound,
     totalRounds: room.settings.rounds,
@@ -98,73 +98,138 @@ function runCountdown(room, seconds, nextState, onComplete) {
 
 // Start Round Loop
 function startRound(room) {
-  // Pick random sound from selected category or all
   const filteredSounds = room.settings.category === 'all'
     ? soundsCatalog
     : soundsCatalog.filter(s => s.category === room.settings.category);
   const soundPool = filteredSounds.length > 0 ? filteredSounds : soundsCatalog;
 
-  // Pick sound not recently played if possible
   const sound = soundPool[Math.floor(Math.random() * soundPool.length)];
   if (room.revealTimer) clearTimeout(room.revealTimer);
-  if (room.leaderboardTimer) clearTimeout(room.leaderboardTimer);
   if (room.timerInterval) clearInterval(room.timerInterval);
 
   room.roundSound = sound;
   room.recordings = [];
   room.revealIndex = 0;
+  room.revealPhase = 'VOTING';
   room.state = 'COUNTDOWN';
   broadcastRoom(room.id);
 
   // 1. Countdown: 3 seconds ("Get Ready...")
   runCountdown(room, 3, 'SOUND', () => {
-    // 2. Play Target Sound (synchronized playback, strictly clamped to max 6 seconds!)
-    const soundDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
+    // 2. Play Target Sound (Synchronized listening: 4 seconds)
+    const soundDuration = Math.min(5, Math.max(3, Math.ceil(sound.duration || 3.5)));
     runCountdown(room, soundDuration, 'RECORDING', () => {
-      // 3. Recording Window - generous buffer so player is never prematurely timed out
-      const recordDuration = Math.min(9, Math.max(6, Math.ceil(sound.duration || 4.0) + 3));
+      // 3. Recording Window (Everyone records simultaneously: 5 seconds)
+      const recordDuration = Math.min(6, Math.max(4, Math.ceil(sound.duration || 3.5) + 1));
       runCountdown(room, recordDuration, 'PROCESSING', () => {
-        // Buffer for network payload arrival
         setTimeout(() => {
           completeRoundRecordings(room);
-        }, 1500);
+        }, 1000);
       });
     });
   });
 }
 
-// Auto-Advance Helpers for Seamless Reveal & Leaderboard Flow
-function scheduleRevealStep(room) {
-  if (room.revealTimer) clearTimeout(room.revealTimer);
-  const clipDuration = Math.min(6.0, Math.max(2.0, room.roundSound?.duration || 3.5));
-  // Reveal pacing: full clip up to 6s + a 1.5-second buffer to display score and reactions
-  const stepDurationMs = Math.round((clipDuration + 1.5) * 1000);
+// Finish collecting recordings & begin peer voting
+function completeRoundRecordings(room) {
+  if (room.state === 'REVEAL' || room.state === 'LEADERBOARD' || room.state === 'GAME_OVER') return;
+  if (room.timerInterval) clearInterval(room.timerInterval);
 
-  room.revealTimer = setTimeout(() => {
-    if (room.state !== 'REVEAL') return;
-    room.revealIndex += 1;
-    if (room.revealIndex >= room.recordings.length) {
+  // Ensure every player in the room has an entry
+  for (const player of room.players.values()) {
+    const hasAttempt = room.recordings.some(r => r.playerId === player.id);
+    if (!hasAttempt) {
+      room.recordings.push({
+        playerId: player.id,
+        playerName: player.name,
+        avatar: player.avatar,
+        character: player.character || null,
+        recordedAudioUrl: null,
+        audioDataUrl: null,
+        votes: {},
+        score: null
+      });
+    }
+  }
+
+  // Initialize votes dictionary on each recording
+  for (const rec of room.recordings) {
+    if (!rec.votes) rec.votes = {};
+    rec.score = null;
+  }
+
+  // Transition to REVEAL & start peer voting on Contestant 0
+  room.state = 'REVEAL';
+  startContestantVoting(room, 0);
+}
+
+// Start peer voting for contestant at given index
+function startContestantVoting(room, index) {
+  if (room.revealTimer) clearTimeout(room.revealTimer);
+  if (room.timerInterval) clearInterval(room.timerInterval);
+
+  room.revealIndex = index;
+  room.revealPhase = 'VOTING';
+
+  const currentRec = room.recordings[index];
+  if (!currentRec) {
+    scheduleLeaderboardAdvance(room);
+    return;
+  }
+
+  // Synchronized voting window: 8 seconds
+  runCountdown(room, 8, null, () => {
+    revealContestantResult(room);
+  });
+}
+
+// Calculate average voted score and reveal to everyone
+function revealContestantResult(room) {
+  if (room.revealTimer) clearTimeout(room.revealTimer);
+  if (room.timerInterval) clearInterval(room.timerInterval);
+
+  const currentRec = room.recordings[room.revealIndex];
+  if (currentRec) {
+    const voteValues = Object.values(currentRec.votes || {});
+    const avgScore = voteValues.length > 0
+      ? Math.round(voteValues.reduce((sum, v) => sum + v, 0) / voteValues.length)
+      : 50;
+    currentRec.score = avgScore;
+  }
+
+  room.revealPhase = 'RESULT';
+
+  // 4 seconds to view the average score result before moving forward
+  runCountdown(room, 4, null, () => {
+    if (room.revealIndex + 1 < room.recordings.length) {
+      startContestantVoting(room, room.revealIndex + 1);
+    } else {
+      // All contestants evaluated! Accumulate scores & display leaderboard
+      for (const rec of room.recordings) {
+        const player = room.players.get(rec.playerId);
+        if (player) {
+          player.score = (player.score || 0) + (rec.score || 0);
+          player.lastRoundScore = rec.score || 0;
+        }
+      }
       room.state = 'LEADERBOARD';
       broadcastRoom(room.id);
       scheduleLeaderboardAdvance(room);
-    } else {
-      broadcastRoom(room.id);
-      scheduleRevealStep(room);
     }
-  }, stepDurationMs);
+  });
 }
 
+// Leaderboard 5-second countdown then automatic advance
 function scheduleLeaderboardAdvance(room) {
-  if (room.leaderboardTimer) clearTimeout(room.leaderboardTimer);
-  room.leaderboardTimer = setTimeout(() => {
-    if (room.state !== 'LEADERBOARD') return;
+  if (room.timerInterval) clearInterval(room.timerInterval);
+
+  runCountdown(room, 5, null, () => {
     advanceRound(room);
-  }, 5500);
+  });
 }
 
 function advanceRound(room) {
-  if (room.revealTimer) clearTimeout(room.revealTimer);
-  if (room.leaderboardTimer) clearTimeout(room.leaderboardTimer);
+  if (room.timerInterval) clearInterval(room.timerInterval);
 
   if (room.currentRound >= room.settings.rounds) {
     room.state = 'GAME_OVER';
@@ -175,59 +240,8 @@ function advanceRound(room) {
   }
 }
 
-// Finish collecting recordings & transition directly to Player 1 Reveal
-function completeRoundRecordings(room) {
-  if (room.state === 'REVEAL' || room.state === 'LEADERBOARD' || room.state === 'GAME_OVER') return;
-
-  if (room.timerInterval) clearInterval(room.timerInterval);
-
-  // If bots are in room, generate their recordings
-  for (const player of room.players.values()) {
-    if (player.isBot) {
-      const alreadyHas = room.recordings.some(r => r.playerId === player.id);
-      if (!alreadyHas) {
-        const botAttempt = generateBotAttempt(player, room.roundSound);
-        room.recordings.push(botAttempt);
-      }
-    } else {
-      // If human didn't submit in time, generate fallback
-      const hasAttempt = room.recordings.some(r => r.playerId === player.id);
-      if (!hasAttempt) {
-        room.recordings.push({
-          playerId: player.id,
-          playerName: player.name,
-          avatar: player.avatar,
-          score: 30,
-          rhythmScore: 25,
-          pitchScore: 30,
-          energyScore: 35,
-          tier: getEgyptianTier(30),
-          audioDataUrl: null
-        });
-      }
-    }
-  }
-
-  // Update cumulative player scores
-  for (const rec of room.recordings) {
-    const player = room.players.get(rec.playerId);
-    if (player) {
-      player.score += rec.score;
-      player.lastRoundScore = rec.score;
-    }
-  }
-
-  // Transition directly to Contestant 1 (NO step -1, NO replaying reference sound!)
-  room.state = 'REVEAL';
-  room.revealIndex = 0;
-  broadcastRoom(room.id);
-  scheduleRevealStep(room);
-}
-
 // Socket IO Connections
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id}`);
-
   // Create Room
   socket.on('create_room', ({ playerName, avatar, character, settings }, callback) => {
     let roomId = generateRoomCode();
@@ -239,6 +253,7 @@ io.on('connection', (socket) => {
       id: roomId,
       hostId: socket.id,
       state: 'LOBBY',
+      revealPhase: 'VOTING',
       settings: {
         rounds: settings?.rounds || 3,
         duration: settings?.duration || 3.5,
@@ -309,57 +324,6 @@ io.on('connection', (socket) => {
     broadcastRoom(code);
   });
 
-  // Add Bot Player
-  socket.on('add_bot', ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (!room || room.players.size >= 8) return;
-
-    const botTemplates = [
-      { name: 'Abu Hamid (Coffee Boss) ☕', avatar: '☕', personality: 'funny' },
-      { name: 'Sousou (Party Queen) 💃', avatar: '💃', personality: 'wild' },
-      { name: 'Uncle Shakshak (The Artist) 🪕', avatar: '🪕', personality: 'pro' },
-      { name: 'Mido (Toktok Maestro) 🛺', avatar: '🛺', personality: 'pro' },
-      { name: 'Captain Koshary 🍲', avatar: '🍲', personality: 'funny' },
-      { name: 'Zizo Comedy King 😂', avatar: '😂', personality: 'wild' },
-      { name: 'Doctor Dahk (Laughter Clinic) 🩺', avatar: '👨‍⚕️', personality: 'funny' },
-      { name: 'Moalem Tarboush 🎩', avatar: '🎩', personality: 'pro' },
-      { name: 'Batta el-Helwa 🦆', avatar: '🦆', personality: 'wild' },
-      { name: 'Sico el-3agouz 👴', avatar: '👴', personality: 'funny' },
-      { name: 'Beshbeshi el-Wale3 🔥', avatar: '🔥', personality: 'pro' },
-      { name: 'Hamada el-Gedaan 😎', avatar: '😎', personality: 'pro' },
-      { name: 'Karika el-Moshagheb 😈', avatar: '😈', personality: 'wild' },
-      { name: 'Felfel el-Shateer 🌶️', avatar: '🌶️', personality: 'funny' },
-      { name: 'Abu Galambo 🦀', avatar: '🦀', personality: 'wild' },
-      { name: 'Om Kalthoum Fan 🎙️', avatar: '🎙️', personality: 'pro' }
-    ];
-
-    const availableBots = botTemplates.filter(b => !Array.from(room.players.values()).some(p => p.name === b.name));
-    const chosenBot = availableBots.length > 0 ? availableBots[0] : botTemplates[Math.floor(Math.random() * botTemplates.length)];
-
-    const botId = `bot_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const botPlayer = {
-      id: botId,
-      name: chosenBot.name,
-      avatar: chosenBot.avatar,
-      personality: chosenBot.personality,
-      score: 0,
-      lastRoundScore: 0,
-      isHost: false,
-      isBot: true
-    };
-
-    room.players.set(botId, botPlayer);
-    broadcastRoom(roomId);
-  });
-
-  // Remove Bot
-  socket.on('remove_bot', ({ roomId, botId }) => {
-    const room = rooms.get(roomId);
-    if (!room) return;
-    room.players.delete(botId);
-    broadcastRoom(roomId);
-  });
-
   // Update Settings
   socket.on('update_settings', ({ roomId, settings }) => {
     const room = rooms.get(roomId);
@@ -368,10 +332,15 @@ io.on('connection', (socket) => {
     broadcastRoom(roomId);
   });
 
-  // Start Game
+  // Start Game - Strict Minimum 2 Players!
   socket.on('start_game', ({ roomId }) => {
     const room = rooms.get(roomId);
     if (!room || room.hostId !== socket.id) return;
+
+    if (room.players.size < 2) {
+      return; // Must have at least 2 players to start peer voting
+    }
+
     room.currentRound = 1;
     for (const player of room.players.values()) {
       player.score = 0;
@@ -380,7 +349,7 @@ io.on('connection', (socket) => {
     startRound(room);
   });
 
-  // Submit Player Recording (Allows both RECORDING and PROCESSING windows)
+  // Submit Player Recording
   socket.on('submit_recording', ({ roomId, recordingData }) => {
     const room = rooms.get(roomId);
     if (!room || (room.state !== 'RECORDING' && room.state !== 'PROCESSING')) return;
@@ -388,9 +357,7 @@ io.on('connection', (socket) => {
     const player = room.players.get(socket.id);
     if (!player) return;
 
-    // Check if already submitted
-    const existingIndex = room.recordings.findIndex(r => r.playerId === socket.id);
-    const audioUrl = recordingData.recordedAudioUrl || recordingData.audioDataUrl;
+    const audioUrl = recordingData?.recordedAudioUrl || recordingData?.audioDataUrl || null;
     player.recordedAudioUrl = audioUrl;
 
     const recEntry = {
@@ -398,54 +365,48 @@ io.on('connection', (socket) => {
       playerName: player.name,
       avatar: player.avatar,
       character: player.character || null,
-      isBot: false,
       recordedAudioUrl: audioUrl,
       audioDataUrl: audioUrl,
-      score: recordingData.score,
-      rhythmScore: recordingData.rhythmScore,
-      pitchScore: recordingData.pitchScore,
-      energyScore: recordingData.energyScore,
-      tier: recordingData.tier || getEgyptianTier(recordingData.score)
+      votes: {},
+      score: null
     };
 
+    const existingIndex = room.recordings.findIndex(r => r.playerId === socket.id);
     if (existingIndex >= 0) {
       room.recordings[existingIndex] = recEntry;
     } else {
       room.recordings.push(recEntry);
     }
 
-    // Check if all human players submitted -> immediately reveal without waiting!
-    const humanPlayers = Array.from(room.players.values()).filter(p => !p.isBot);
-    const humanRecordings = room.recordings.filter(r => !r.isBot);
-
-    if (humanRecordings.length >= humanPlayers.length) {
+    // Check if all players in room submitted
+    if (room.recordings.length >= room.players.size) {
       if (room.timerInterval) clearInterval(room.timerInterval);
       completeRoundRecordings(room);
     }
   });
 
-  // Advance Reveal Step (Auto or Manual Host Skip)
-  socket.on('next_reveal_step', ({ roomId }) => {
+  // Submit Peer Vote (1 to 100)
+  socket.on('submit_vote', ({ roomId, score }) => {
     const room = rooms.get(roomId);
-    if (!room || room.hostId !== socket.id || room.state !== 'REVEAL') return;
-    if (room.revealTimer) clearTimeout(room.revealTimer);
+    if (!room || room.state !== 'REVEAL' || room.revealPhase !== 'VOTING') return;
 
-    room.revealIndex += 1;
-    if (room.revealIndex >= room.recordings.length) {
-      room.state = 'LEADERBOARD';
-      broadcastRoom(roomId);
-      scheduleLeaderboardAdvance(room);
+    const currentRec = room.recordings[room.revealIndex];
+    if (!currentRec) return;
+
+    // Disallow voting for oneself
+    if (currentRec.playerId === socket.id) return;
+
+    const cleanScore = Math.max(1, Math.min(100, Math.round(Number(score) || 50)));
+    currentRec.votes = currentRec.votes || {};
+    currentRec.votes[socket.id] = cleanScore;
+
+    // Check if all other players have voted
+    const eligibleVoters = Array.from(room.players.values()).filter(p => p.id !== currentRec.playerId);
+    if (Object.keys(currentRec.votes).length >= eligibleVoters.length) {
+      revealContestantResult(room);
     } else {
       broadcastRoom(roomId);
-      scheduleRevealStep(room);
     }
-  });
-
-  // Next Round / Game Over Advance
-  socket.on('advance_round', ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (!room || room.hostId !== socket.id) return;
-    advanceRound(room);
   });
 
   // Play Again (Reset to Lobby)
@@ -453,6 +414,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (!room || room.hostId !== socket.id) return;
     room.state = 'LOBBY';
+    room.revealPhase = 'VOTING';
     room.currentRound = 1;
     room.recordings = [];
     room.roundSound = null;
@@ -465,7 +427,6 @@ io.on('connection', (socket) => {
 
   // Disconnect
   socket.on('disconnect', () => {
-    console.log(`Socket disconnected: ${socket.id}`);
     const roomId = socket.data.roomId;
     if (!roomId) return;
 
@@ -474,14 +435,12 @@ io.on('connection', (socket) => {
 
     room.players.delete(socket.id);
 
-    // If host left, assign new host or delete room if empty
     if (room.players.size === 0) {
       if (room.timerInterval) clearInterval(room.timerInterval);
       rooms.delete(roomId);
     } else {
       if (room.hostId === socket.id) {
-        // Assign first human or any player as new host
-        const nextHost = Array.from(room.players.values()).find(p => !p.isBot) || Array.from(room.players.values())[0];
+        const nextHost = Array.from(room.players.values())[0];
         if (nextHost) {
           nextHost.isHost = true;
           room.hostId = nextHost.id;

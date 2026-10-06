@@ -113,6 +113,7 @@ class PeerNetwork {
       id: code,
       hostId: hostPeerId,
       state: 'LOBBY',
+      revealPhase: 'VOTING',
       settings: {
         rounds: settings?.rounds || 3,
         category: settings?.category || 'all'
@@ -151,7 +152,6 @@ class PeerNetwork {
 
       this.peer.on('error', (err) => {
         console.error('PeerJS Host error:', err);
-        // If ID taken, retry with new code
         if (err.type === 'unavailable-id') {
           this.createRoom({ playerName, avatar, character, settings }, callback);
         } else if (callback) {
@@ -222,6 +222,8 @@ class PeerNetwork {
       this.notifyRoomUpdate();
     } else if (data.type === 'SUBMIT_RECORDING') {
       this.recordPlayerSubmission(peerId, data.recordingData);
+    } else if (data.type === 'SUBMIT_VOTE') {
+      this.recordVote(peerId, data.score);
     }
   }
 
@@ -255,12 +257,10 @@ class PeerNetwork {
       }, 9000);
 
       this.peer.on('open', (myPeerId) => {
-        console.log(`Connecting to Host ${targetHostPeerId} from ${myPeerId}`);
         const conn = this.peer.connect(targetHostPeerId, { reliable: true });
         this.hostConnection = conn;
 
         conn.on('open', () => {
-          // Send join request
           conn.send(JSON.stringify({
             type: 'JOIN_REQUEST',
             playerName,
@@ -288,7 +288,6 @@ class PeerNetwork {
               }
             } else if (data.type === 'ROOM_UPDATE') {
               this.room = data.room;
-              // Synchronize local player state if needed
               if (this.localPlayer) {
                 const found = this.room.players.find(p => p.id === this.localPlayer.id);
                 if (found) {
@@ -303,7 +302,7 @@ class PeerNetwork {
           }
         });
 
-        conn.on('error', (err) => {
+        conn.on('error', () => {
           clearTimeout(joinTimeout);
           if (!hasResponded) {
             hasResponded = true;
@@ -312,7 +311,6 @@ class PeerNetwork {
         });
 
         conn.on('close', () => {
-          console.warn('Connection to host closed');
           if (this.onRoomUpdateCallback) {
             this.onRoomUpdateCallback(null);
           }
@@ -332,9 +330,11 @@ class PeerNetwork {
     }
   }
 
-  // Host starts the game
+  // Host starts the game - Strict Minimum 2 Players!
   startGame() {
     if (!this.isHost || !this.room) return;
+    if (this.room.players.length < 2) return; // Strict minimum 2 players
+
     this.room.currentRound = 1;
     this.room.totalRounds = this.room.settings.rounds || 3;
     for (const p of this.room.players) {
@@ -357,20 +357,21 @@ class PeerNetwork {
     this.room.roundSound = sound;
     this.room.recordings = [];
     this.room.revealIndex = 0;
+    this.room.revealPhase = 'VOTING';
     this.room.state = 'COUNTDOWN';
     this.notifyRoomUpdate();
 
     // 1. Countdown: 3 seconds
     this.runCountdown(3, 'SOUND', () => {
-      // 2. Play Target Sound
-      const soundDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
+      // 2. Play Target Sound (Synchronized listening: 4 seconds)
+      const soundDuration = Math.min(5, Math.max(3, Math.ceil(sound.duration || 3.5)));
       this.runCountdown(soundDuration, 'RECORDING', () => {
-        // 3. Recording Window (generous window so player never gets cut off prematurely before submission)
-        const recordDuration = Math.min(9, Math.max(6, Math.ceil(sound.duration || 4.0) + 3));
+        // 3. Recording Window (Everyone records simultaneously: 5 seconds)
+        const recordDuration = Math.min(6, Math.max(4, Math.ceil(sound.duration || 3.5) + 1));
         this.runCountdown(recordDuration, 'PROCESSING', () => {
           setTimeout(() => {
             this.completeRoundRecordings();
-          }, 1500);
+          }, 1000);
         });
       });
     });
@@ -417,7 +418,7 @@ class PeerNetwork {
     const player = this.room.players.find(p => p.id === playerId);
     if (!player) return;
 
-    const audioUrl = recordingData.recordedAudioUrl || recordingData.audioDataUrl;
+    const audioUrl = recordingData?.recordedAudioUrl || recordingData?.audioDataUrl || null;
     player.recordedAudioUrl = audioUrl;
 
     const recEntry = {
@@ -425,15 +426,10 @@ class PeerNetwork {
       playerName: player.name,
       avatar: player.avatar,
       character: player.character || null,
-      isBot: false,
-      isAI: false,
       recordedAudioUrl: audioUrl,
       audioDataUrl: audioUrl,
-      score: recordingData.score,
-      rhythmScore: recordingData.rhythmScore,
-      pitchScore: recordingData.pitchScore,
-      energyScore: recordingData.energyScore,
-      tier: recordingData.tier
+      votes: {},
+      score: null
     };
 
     const idx = this.room.recordings.findIndex(r => r.playerId === playerId);
@@ -465,51 +461,113 @@ class PeerNetwork {
           playerName: player.name,
           avatar: player.avatar,
           character: player.character || null,
-          isBot: false,
-          isAI: false,
-          score: 40,
-          rhythmScore: 35,
-          pitchScore: 40,
-          energyScore: 45,
-          tier: {
-            badge: "محاولة طيبة 👏",
-            badgeEn: "Good Effort! 👏",
-            color: "#64748B",
-            reaction: "محاولة طيبة وروح رياضية عالية! 👏"
-          },
+          recordedAudioUrl: null,
           audioDataUrl: null,
-          recordedAudioUrl: null
+          votes: {},
+          score: null
         });
       }
     }
 
-    // Accumulate total scores
     for (const rec of this.room.recordings) {
-      const p = this.room.players.find(x => x.id === rec.playerId);
-      if (p) {
-        p.score = (p.score || 0) + rec.score;
-        p.lastRoundScore = rec.score;
-      }
+      if (!rec.votes) rec.votes = {};
+      rec.score = null;
     }
 
-    // Transition directly to REVEAL (Host controls when to advance!)
     this.room.state = 'REVEAL';
-    this.room.revealIndex = 0;
-    this.notifyRoomUpdate();
+    this.startContestantVoting(0);
   }
 
-  // Advance Reveal Step: triggered by HOST ONLY
-  nextRevealStep() {
-    if (!this.isHost || !this.room || this.room.state !== 'REVEAL') return;
+  startContestantVoting(index) {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+    this.room.revealIndex = index;
+    this.room.revealPhase = 'VOTING';
 
-    this.room.revealIndex += 1;
-    if (this.room.revealIndex >= this.room.recordings.length) {
-      this.room.state = 'LEADERBOARD';
+    const currentRec = this.room.recordings[index];
+    if (!currentRec) {
+      this.scheduleLeaderboard();
+      return;
     }
-    this.notifyRoomUpdate();
+
+    // 8 seconds voting countdown
+    this.runCountdown(8, null, () => {
+      this.revealContestantResult();
+    });
   }
 
-  // Host advances to Next Round or Game Over
+  revealContestantResult() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+
+    const currentRec = this.room.recordings[this.room.revealIndex];
+    if (currentRec) {
+      const voteValues = Object.values(currentRec.votes || {});
+      const avgScore = voteValues.length > 0
+        ? Math.round(voteValues.reduce((sum, v) => sum + v, 0) / voteValues.length)
+        : 50;
+      currentRec.score = avgScore;
+    }
+
+    this.room.revealPhase = 'RESULT';
+
+    // 4 seconds to view the average score result before moving forward
+    this.runCountdown(4, null, () => {
+      if (this.room.revealIndex + 1 < this.room.recordings.length) {
+        this.startContestantVoting(this.room.revealIndex + 1);
+      } else {
+        // Accumulate scores & display leaderboard
+        for (const rec of this.room.recordings) {
+          const p = this.room.players.find(x => x.id === rec.playerId);
+          if (p) {
+            p.score = (p.score || 0) + (rec.score || 0);
+            p.lastRoundScore = rec.score || 0;
+          }
+        }
+        this.room.state = 'LEADERBOARD';
+        this.notifyRoomUpdate();
+        this.scheduleLeaderboard();
+      }
+    });
+  }
+
+  scheduleLeaderboard() {
+    if (this.timerInterval) clearInterval(this.timerInterval);
+
+    // Leaderboard countdown 5 seconds
+    this.runCountdown(5, null, () => {
+      this.advanceRound();
+    });
+  }
+
+  submitVote(score) {
+    if (this.isHost) {
+      this.recordVote(this.localPlayer.id, score);
+    } else if (this.hostConnection && this.hostConnection.open) {
+      this.hostConnection.send(JSON.stringify({
+        type: 'SUBMIT_VOTE',
+        score
+      }));
+    }
+  }
+
+  recordVote(voterId, score) {
+    if (!this.isHost || !this.room || this.room.state !== 'REVEAL' || this.room.revealPhase !== 'VOTING') return;
+
+    const currentRec = this.room.recordings[this.room.revealIndex];
+    if (!currentRec || currentRec.playerId === voterId) return;
+
+    const cleanScore = Math.max(1, Math.min(100, Math.round(Number(score) || 50)));
+    currentRec.votes = currentRec.votes || {};
+    currentRec.votes[voterId] = cleanScore;
+
+    const eligibleVoters = this.room.players.filter(p => p.id !== currentRec.playerId);
+    if (Object.keys(currentRec.votes).length >= eligibleVoters.length) {
+      this.revealContestantResult();
+    } else {
+      this.notifyRoomUpdate();
+    }
+  }
+
+  // Advance Round or Game Over
   advanceRound() {
     if (!this.isHost || !this.room) return;
 
@@ -526,6 +584,7 @@ class PeerNetwork {
   playAgain() {
     if (!this.isHost || !this.room) return;
     this.room.state = 'LOBBY';
+    this.room.revealPhase = 'VOTING';
     this.room.currentRound = 1;
     this.room.recordings = [];
     this.room.roundSound = null;
