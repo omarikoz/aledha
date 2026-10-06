@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Volume2, Sparkles, Check, Users } from 'lucide-react';
+import { Volume2, Sparkles, Check, Users, Clock } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
 export default function RevealScreen({
@@ -15,16 +15,13 @@ export default function RevealScreen({
 
   const recordings = room?.recordings || [];
   const revealIndex = Math.max(0, room?.revealIndex || 0);
-  const revealPhase = room?.revealPhase || 'VOTING'; // 'VOTING' or 'RESULT'
+  const revealPhase = room?.revealPhase || 'VOTING'; // 'PLAYING', 'VOTING', or 'RESULT'
   const timer = room?.timer ?? 0;
 
   const currentRec = recordings[revealIndex] || recordings[0] || null;
 
   // Active contestant info
   const isCurrentUser = currentRec?.playerId === player?.id;
-  const contestantPlayer = (room?.players || []).find(p => p.id === currentRec?.playerId);
-  const contestantCharacter = currentRec?.character || contestantPlayer?.character || null;
-
   const humanAudioSource = (isCurrentUser && localRecordedAudioUrl)
     || currentRec?.audioDataUrl
     || currentRec?.recordedAudioUrl;
@@ -43,7 +40,7 @@ export default function RevealScreen({
     }
   }, [currentRec?.votes, player?.id]);
 
-  // Synchronized audio playback: automatically play contestant take once on reveal
+  // Synchronized audio playback: automatically play contestant take once upon reveal
   useEffect(() => {
     setIsPlayingAudio(false);
 
@@ -98,6 +95,13 @@ export default function RevealScreen({
     }
   };
 
+  // Auto-submit current vote when voting timer expires
+  useEffect(() => {
+    if (revealPhase === 'VOTING' && timer <= 1 && !hasVoted && !isCurrentUser) {
+      handleCastVote();
+    }
+  }, [revealPhase, timer, hasVoted, isCurrentUser]);
+
   if (!currentRec) {
     return (
       <div className="w-full max-w-md mx-auto px-4 py-8 text-center arcade-card">
@@ -122,10 +126,22 @@ export default function RevealScreen({
             <span>Contestant {revealIndex + 1} of {recordings.length}</span>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-900 px-3 py-1 rounded-full border border-white/10 text-cyan-400 font-mono text-xs">
-            <span>⏳</span>
-            <span>{timer}s</span>
-          </div>
+          {/* Strict 5-Second Voting Window Timer: The ONLY visible countdown timer in the game */}
+          {revealPhase === 'VOTING' ? (
+            <div className="flex items-center gap-1.5 bg-amber-400/20 px-3 py-1 rounded-full border border-amber-400 text-amber-300 font-mono text-xs font-black animate-pulse">
+              <Clock size={13} />
+              <span>Voting ends in: {Math.max(1, timer)}s</span>
+            </div>
+          ) : revealPhase === 'PLAYING' ? (
+            <div className="flex items-center gap-1.5 bg-cyan-400/20 px-3 py-1 rounded-full border border-cyan-400 text-cyan-300 text-xs font-bold animate-pulse">
+              <Volume2 size={13} />
+              <span>Listening to take...</span>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400 font-semibold">
+              Results
+            </div>
+          )}
         </div>
 
         {/* Center: Contestant Name */}
@@ -167,18 +183,24 @@ export default function RevealScreen({
           )}
         </div>
 
-        {/* SECTION A: VOTING PHASE */}
+        {/* SECTION A: VOTING PHASE (Strict 5-Second Voting Window with Visible Countdown) */}
         {revealPhase === 'VOTING' && (
           <div className="mt-4 p-4 rounded-3xl bg-slate-950/90 border-2 border-black shadow-[3px_3px_0px_#000] text-center">
+            {/* Prominent 5-Second Countdown Display */}
+            <div className="flex items-center justify-center gap-2 p-2 rounded-2xl bg-amber-500/15 border-2 border-amber-400/40 text-amber-300 font-black text-xs sm:text-sm mb-3 animate-pulse">
+              <Clock size={16} />
+              <span>Voting ends in: {Math.max(1, timer)}s</span>
+            </div>
+
             {isCurrentUser ? (
               // Active Contestant View (Cannot vote for self)
               <div className="py-4 space-y-2">
                 <div className="text-3xl animate-bounce">🎙️</div>
                 <h4 className="text-base sm:text-lg font-black text-amber-400">
-                  Other players are rating your sound...
+                  Other players are voting on your take!
                 </h4>
                 <p className="text-xs text-slate-400 font-bold">
-                  Your take is currently being evaluated (1 to 100)
+                  Scoring window is 5 seconds
                 </p>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-white/10 text-xs font-mono font-bold text-emerald-400 mt-2">
                   <Users size={14} />

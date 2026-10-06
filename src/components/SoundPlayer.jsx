@@ -2,24 +2,32 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Volume2 } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
-export default function SoundPlayer({ sound, timer }) {
+export default function SoundPlayer({ sound, round }) {
   const [isPlaying, setIsPlaying] = useState(true);
-  const playedSoundIdRef = useRef(null);
+  const audioTriggeredRef = useRef(false);
 
   useEffect(() => {
-    if (!sound?.id) return;
-    if (playedSoundIdRef.current === sound.id) return;
-    playedSoundIdRef.current = sound.id;
+    // Cancel any lingering audio instances from previous rounds
+    soundSynthesizer.stopAll();
+    audioTriggeredRef.current = false;
 
-    setIsPlaying(true);
-    soundSynthesizer.playTargetSound(sound, () => {
-      setIsPlaying(false);
-    });
+    if (!sound?.id) return;
+
+    // Instantiate and play strictly once upon entering listening phase
+    if (!audioTriggeredRef.current) {
+      audioTriggeredRef.current = true;
+      setIsPlaying(true);
+      soundSynthesizer.playTargetSound(sound, () => {
+        setIsPlaying(false);
+      });
+    }
 
     return () => {
+      // Clean up audio on unmount / state change
       soundSynthesizer.stopAll();
+      audioTriggeredRef.current = false;
     };
-  }, [sound?.id]);
+  }, [sound?.id, round]);
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-4 sm:py-6 text-center select-none">
@@ -27,7 +35,7 @@ export default function SoundPlayer({ sound, timer }) {
         {/* Status Pill */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/20 border-2 border-cyan-400 text-cyan-300 font-extrabold text-xs sm:text-sm mb-4 animate-pulse">
           <Volume2 size={16} />
-          <span>LISTEN CLOSELY 🔊</span>
+          <span>LISTEN CAREFULLY 🔊</span>
         </div>
 
         {/* Sound Emoji Icon */}
@@ -40,7 +48,7 @@ export default function SoundPlayer({ sound, timer }) {
           {sound.name}
         </h2>
 
-        {/* Clean Animated Audio Waves */}
+        {/* Animated Audio Waves (No duration clocks or seconds remaining) */}
         <div className="flex items-center justify-center gap-1.5 h-14 w-full max-w-xs my-3 bg-slate-950/80 rounded-2xl border-2 border-black p-3 shadow-inner">
           {Array.from({ length: 16 }).map((_, i) => (
             <div
@@ -51,22 +59,18 @@ export default function SoundPlayer({ sound, timer }) {
                   : 'bg-slate-700 h-2'
               }`}
               style={{
-                height: isPlaying ? `${Math.max(20, Math.sin(i * 0.7 + (Date.now() / 150)) * 75 + 25)}%` : '6px',
+                height: isPlaying
+                  ? `${Math.max(20, Math.sin(i * 0.7 + (Date.now() / 150)) * 75 + 25)}%`
+                  : '6px',
                 animationDelay: `${i * 50}ms`
               }}
             />
           ))}
         </div>
 
-        {/* Large Countdown */}
-        <div className="mt-2 text-center">
-          <div className="text-xs font-bold text-slate-400 mb-1">
-            Recording starts in:
-          </div>
-          <div className="text-4xl font-black font-display text-amber-400">
-            {timer}s
-          </div>
-        </div>
+        <p className="text-xs text-slate-400 font-semibold mt-1">
+          {isPlaying ? 'Playing reference clip...' : 'Prepare to record your take'}
+        </p>
       </div>
     </div>
   );

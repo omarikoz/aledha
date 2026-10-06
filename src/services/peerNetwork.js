@@ -208,9 +208,32 @@ class PeerNetwork {
         return;
       }
 
+      const cleanName = (data.playerName || '').trim();
+      if (!cleanName) {
+        const conn = this.connections.get(peerId);
+        if (conn) conn.send(JSON.stringify({ type: 'JOIN_RESPONSE', success: false, error: 'Please enter your name.' }));
+        return;
+      }
+
+      const isDuplicate = this.room.players.some(
+        (p) => p.name.trim().toLowerCase() === cleanName.toLowerCase()
+      );
+
+      if (isDuplicate) {
+        const conn = this.connections.get(peerId);
+        if (conn) {
+          conn.send(JSON.stringify({
+            type: 'JOIN_RESPONSE',
+            success: false,
+            error: 'This name is already taken by another player in the lobby.'
+          }));
+        }
+        return;
+      }
+
       const newPlayer = {
         id: peerId,
-        name: (data.playerName || '').trim() || `Player ${this.room.players.length + 1}`,
+        name: cleanName,
         avatar: '🎤',
         score: 0,
         lastRoundScore: 0,
@@ -357,6 +380,7 @@ class PeerNetwork {
   // Host starts a round
   startRound() {
     if (!this.isHost || !this.room) return;
+    if (this.timerInterval) clearInterval(this.timerInterval);
 
     const filtered = this.room.settings.category === 'all'
       ? soundsCatalog
@@ -367,22 +391,19 @@ class PeerNetwork {
     this.room.roundSound = sound;
     this.room.recordings = [];
     this.room.revealIndex = 0;
-    this.room.revealPhase = 'VOTING';
-    this.room.state = 'COUNTDOWN';
+    this.room.revealPhase = 'PLAYING';
+    this.room.state = 'SOUND';
     this.notifyRoomUpdate();
 
-    // 1. Countdown: 3 seconds
-    this.runCountdown(3, 'SOUND', () => {
-      // 2. Play Target Sound (Synchronized listening: 4 seconds)
-      const soundDuration = Math.min(5, Math.max(3, Math.ceil(sound.duration || 3.5)));
-      this.runCountdown(soundDuration, 'RECORDING', () => {
-        // 3. Recording Window (Everyone records simultaneously: 5 seconds)
-        const recordDuration = Math.min(6, Math.max(4, Math.ceil(sound.duration || 3.5) + 1));
-        this.runCountdown(recordDuration, 'PROCESSING', () => {
-          setTimeout(() => {
-            this.completeRoundRecordings();
-          }, 1000);
-        });
+    // Play Target Sound (listening phase: 3.5s to 4s)
+    const soundDuration = Math.min(5, Math.max(3, Math.ceil(sound.duration || 3.5)));
+    this.runCountdown(soundDuration, 'RECORDING', () => {
+      // Recording Window (everyone records simultaneously: 4.5s)
+      const recordDuration = Math.min(6, Math.max(4, Math.ceil(sound.duration || 3.5) + 1));
+      this.runCountdown(recordDuration, 'PROCESSING', () => {
+        setTimeout(() => {
+          this.completeRoundRecordings();
+        }, 500);
       });
     });
   }
@@ -491,7 +512,6 @@ class PeerNetwork {
   startContestantVoting(index) {
     if (this.timerInterval) clearInterval(this.timerInterval);
     this.room.revealIndex = index;
-    this.room.revealPhase = 'VOTING';
 
     const currentRec = this.room.recordings[index];
     if (!currentRec) {
@@ -499,9 +519,17 @@ class PeerNetwork {
       return;
     }
 
-    // 8 seconds voting countdown
-    this.runCountdown(8, null, () => {
-      this.revealContestantResult();
+    // Step 1: Announce and play contestant take (2.5s)
+    this.room.revealPhase = 'PLAYING';
+    this.room.timer = 0;
+    this.notifyRoomUpdate();
+
+    this.runCountdown(3, null, () => {
+      // Step 2: Strict 5-Second Voting Window with Visible Countdown
+      this.room.revealPhase = 'VOTING';
+      this.runCountdown(5, null, () => {
+        this.revealContestantResult();
+      });
     });
   }
 
@@ -518,9 +546,11 @@ class PeerNetwork {
     }
 
     this.room.revealPhase = 'RESULT';
+    this.room.timer = 0;
+    this.notifyRoomUpdate();
 
-    // 4 seconds to view the average score result before moving forward
-    this.runCountdown(4, null, () => {
+    // 3 seconds to view the average score result before moving forward
+    this.runCountdown(3, null, () => {
       if (this.room.revealIndex + 1 < this.room.recordings.length) {
         this.startContestantVoting(this.room.revealIndex + 1);
       } else {
@@ -542,8 +572,8 @@ class PeerNetwork {
   scheduleLeaderboard() {
     if (this.timerInterval) clearInterval(this.timerInterval);
 
-    // Leaderboard countdown 5 seconds
-    this.runCountdown(5, null, () => {
+    // Leaderboard countdown 4 seconds
+    this.runCountdown(4, null, () => {
       this.advanceRound();
     });
   }
@@ -577,16 +607,28 @@ class PeerNetwork {
     }
   }
 
-  // Advance Round or Game Over
+  // Advance Round: ROUND_END -> SHORT_BUFFER (2s) -> START_ROUND -> PLAY_TARGET_SOUND
   advanceRound() {
     if (!this.isHost || !this.room) return;
+    if (this.isAdvancing) return;
+    this.isAdvancing = true;
+
+    if (this.timerInterval) clearInterval(this.timerInterval);
 
     if (this.room.currentRound >= this.room.totalRounds) {
       this.room.state = 'GAME_OVER';
+      this.isAdvancing = false;
       this.notifyRoomUpdate();
     } else {
       this.room.currentRound += 1;
-      this.startRound();
+      this.room.state = 'BUFFER';
+      this.room.timer = 2;
+      this.notifyRoomUpdate();
+
+      this.runCountdown(2, null, () => {
+        this.isAdvancing = false;
+        this.startRound();
+      });
     }
   }
 

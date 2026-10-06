@@ -117,20 +117,20 @@ export default function Lobby({
                 if (errorMessage) setErrorMessage('');
               }}
               placeholder="Enter your name"
-              className="w-full bg-slate-900 border-2 border-black rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 shadow-[2px_2px_0px_#000]"
+              className={`w-full bg-slate-900 border-2 rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-white placeholder-slate-500 focus:outline-none shadow-[2px_2px_0px_#000] ${
+                errorMessage ? 'border-rose-500' : 'border-black focus:border-amber-400'
+              }`}
             />
-            {!isNameValid && (
+            {errorMessage ? (
+              <div className="mt-2 p-2 bg-rose-950/90 border border-rose-500 rounded-xl text-rose-300 text-xs font-bold animate-wiggle">
+                ⚠️ {errorMessage}
+              </div>
+            ) : !isNameValid ? (
               <p className="text-[11px] text-slate-400 mt-1">
                 Please enter your name to create or join a room.
               </p>
-            )}
+            ) : null}
           </div>
-
-          {errorMessage && (
-            <div className="p-2.5 bg-rose-900/60 border-2 border-rose-500 rounded-xl text-rose-200 text-xs sm:text-sm font-bold animate-wiggle">
-              {errorMessage}
-            </div>
-          )}
 
           {/* Action Tabs: Create Room vs Join Room */}
           {!joinMode ? (

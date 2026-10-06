@@ -18,21 +18,18 @@ export default function Leaderboard({
     soundSynthesizer.playUiSound('fanfare');
 
     const startTime = Date.now();
-    const durationMs = 5000;
+    const durationMs = 4000;
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
       const remaining = Math.max(0, (durationMs - elapsed) / 1000);
       setCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(interval);
-        if (isHost) {
-          onAdvanceRound();
-        }
       }
     }, 100);
 
     return () => clearInterval(interval);
-  }, [isHost, onAdvanceRound]);
+  }, []);
 
   // Sort players by total score descending
   const sortedPlayers = [...(room.players || [])].sort((a, b) => b.score - a.score);

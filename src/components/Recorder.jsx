@@ -148,10 +148,10 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
       className="w-full max-w-md mx-auto px-4 py-4 sm:py-6 text-center select-none"
     >
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
-        {/* Clean Pulsing Recording Badge */}
+        {/* Clean Pulsing Recording Badge (No Mimic It text) */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
-          <span>🔴 RECORDING: MIMIC IT NOW!</span>
+          <span>🔴 RECORDING AUDIO</span>
         </div>
 
         {/* Sound Title */}
@@ -188,18 +188,15 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
           </div>
         </div>
 
-        {/* Simple Large Countdown / Status */}
+        {/* Status (No numeric duration timers or clock labels) */}
         {hasRecorded ? (
           <div className="text-emerald-400 font-black text-sm sm:text-base mt-2 flex items-center gap-2">
             <span>✓ Recording submitted! Preparing reveals...</span>
           </div>
         ) : (
           <div className="mt-2 text-center">
-            <span className="text-3xl font-black font-display text-amber-400 block">
-              {timer}s
-            </span>
-            <span className="text-xs font-bold text-slate-400">
-              Speak clearly into your microphone!
+            <span className="text-xs font-bold text-slate-300 block">
+              Speak clearly into your microphone
             </span>
           </div>
         )}

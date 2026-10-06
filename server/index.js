@@ -99,34 +99,32 @@ function runCountdown(room, seconds, nextState, onComplete) {
 
 // Start Round Loop
 function startRound(room) {
+  if (room.revealTimer) clearTimeout(room.revealTimer);
+  if (room.timerInterval) clearInterval(room.timerInterval);
+
   const filteredSounds = room.settings.category === 'all'
     ? soundsCatalog
     : soundsCatalog.filter(s => s.category === room.settings.category);
   const soundPool = filteredSounds.length > 0 ? filteredSounds : soundsCatalog;
 
   const sound = soundPool[Math.floor(Math.random() * soundPool.length)];
-  if (room.revealTimer) clearTimeout(room.revealTimer);
-  if (room.timerInterval) clearInterval(room.timerInterval);
 
   room.roundSound = sound;
   room.recordings = [];
   room.revealIndex = 0;
-  room.revealPhase = 'VOTING';
-  room.state = 'COUNTDOWN';
+  room.revealPhase = 'PLAYING';
+  room.state = 'SOUND';
   broadcastRoom(room.id);
 
-  // 1. Countdown: 3 seconds ("Get Ready...")
-  runCountdown(room, 3, 'SOUND', () => {
-    // 2. Play Target Sound (Synchronized listening: 4 seconds)
-    const soundDuration = Math.min(5, Math.max(3, Math.ceil(sound.duration || 3.5)));
-    runCountdown(room, soundDuration, 'RECORDING', () => {
-      // 3. Recording Window (Everyone records simultaneously: 5 seconds)
-      const recordDuration = Math.min(6, Math.max(4, Math.ceil(sound.duration || 3.5) + 1));
-      runCountdown(room, recordDuration, 'PROCESSING', () => {
-        setTimeout(() => {
-          completeRoundRecordings(room);
-        }, 1000);
-      });
+  // Play Target Sound (listening phase: 3.5s to 4s)
+  const soundDuration = Math.min(5, Math.max(3, Math.ceil(sound.duration || 3.5)));
+  runCountdown(room, soundDuration, 'RECORDING', () => {
+    // Recording Window (everyone records simultaneously: 4.5s)
+    const recordDuration = Math.min(6, Math.max(4, Math.ceil(sound.duration || 3.5) + 1));
+    runCountdown(room, recordDuration, 'PROCESSING', () => {
+      setTimeout(() => {
+        completeRoundRecordings(room);
+      }, 500);
     });
   });
 }
@@ -143,8 +141,8 @@ function completeRoundRecordings(room) {
       room.recordings.push({
         playerId: player.id,
         playerName: player.name,
-        avatar: player.avatar,
-        character: player.character || null,
+        avatar: player.avatar || '🎤',
+        character: null,
         recordedAudioUrl: null,
         audioDataUrl: null,
         votes: {},
@@ -159,7 +157,7 @@ function completeRoundRecordings(room) {
     rec.score = null;
   }
 
-  // Transition to REVEAL & start peer voting on Contestant 0
+  // Transition to REVEAL & start contestant sequence
   room.state = 'REVEAL';
   startContestantVoting(room, 0);
 }
@@ -170,17 +168,23 @@ function startContestantVoting(room, index) {
   if (room.timerInterval) clearInterval(room.timerInterval);
 
   room.revealIndex = index;
-  room.revealPhase = 'VOTING';
-
   const currentRec = room.recordings[index];
   if (!currentRec) {
     scheduleLeaderboardAdvance(room);
     return;
   }
 
-  // Synchronized voting window: 8 seconds
-  runCountdown(room, 8, null, () => {
-    revealContestantResult(room);
+  // Step 1: Announce and play contestant take (2.5s)
+  room.revealPhase = 'PLAYING';
+  room.timer = 0;
+  broadcastRoom(room.id);
+
+  runCountdown(room, 3, null, () => {
+    // Step 2: Strict 5-Second Voting Window with Visible Countdown!
+    room.revealPhase = 'VOTING';
+    runCountdown(room, 5, null, () => {
+      revealContestantResult(room);
+    });
   });
 }
 
@@ -199,9 +203,11 @@ function revealContestantResult(room) {
   }
 
   room.revealPhase = 'RESULT';
+  room.timer = 0;
+  broadcastRoom(room.id);
 
-  // 4 seconds to view the average score result before moving forward
-  runCountdown(room, 4, null, () => {
+  // 3 seconds to view the average score result before moving forward
+  runCountdown(room, 3, null, () => {
     if (room.revealIndex + 1 < room.recordings.length) {
       startContestantVoting(room, room.revealIndex + 1);
     } else {
@@ -220,24 +226,39 @@ function revealContestantResult(room) {
   });
 }
 
-// Leaderboard 5-second countdown then automatic advance
+// Leaderboard countdown then automatic advance
 function scheduleLeaderboardAdvance(room) {
   if (room.timerInterval) clearInterval(room.timerInterval);
+  if (room.revealTimer) clearTimeout(room.revealTimer);
 
-  runCountdown(room, 5, null, () => {
+  runCountdown(room, 4, null, () => {
     advanceRound(room);
   });
 }
 
+// Clean round lifecycle: ROUND_END -> SHORT_BUFFER (2s) -> START_ROUND -> PLAY_TARGET_SOUND
 function advanceRound(room) {
+  if (room.isAdvancing) return;
+  room.isAdvancing = true;
+
   if (room.timerInterval) clearInterval(room.timerInterval);
+  if (room.revealTimer) clearTimeout(room.revealTimer);
 
   if (room.currentRound >= room.settings.rounds) {
     room.state = 'GAME_OVER';
+    room.isAdvancing = false;
     broadcastRoom(room.id);
   } else {
     room.currentRound += 1;
-    startRound(room);
+    // SHORT_BUFFER (2s)
+    room.state = 'BUFFER';
+    room.timer = 2;
+    broadcastRoom(room.id);
+
+    runCountdown(room, 2, null, () => {
+      room.isAdvancing = false;
+      startRound(room);
+    });
   }
 }
 
@@ -304,9 +325,28 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const cleanName = (playerName || '').trim();
+    if (!cleanName) {
+      if (callback) callback({ success: false, error: 'Please enter your name.' });
+      return;
+    }
+
+    // Case-insensitive duplicate check against connected players in the lobby
+    const isDuplicate = Array.from(room.players.values()).some(
+      (p) => p.name.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      if (callback) callback({
+        success: false,
+        error: 'This name is already taken by another player in the lobby.'
+      });
+      return;
+    }
+
     const player = {
       id: socket.id,
-      name: (playerName || '').trim() || `Player ${room.players.size + 1}`,
+      name: cleanName,
       avatar: '🎤',
       recordedAudioUrl: null,
       score: 0,

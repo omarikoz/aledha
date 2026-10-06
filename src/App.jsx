@@ -246,21 +246,19 @@ export default function App() {
             onStartGame={handleStartGame}
             onUpdateSettings={handleUpdateSettings}
           />
-        ) : room.state === 'COUNTDOWN' ? (
+        ) : room.state === 'COUNTDOWN' || room.state === 'BUFFER' ? (
           <Countdown
-            timer={room.timer}
-            round={room.currentRound || 1}
+            currentRound={room.currentRound || 1}
             totalRounds={room.totalRounds || room.settings?.rounds || 3}
           />
         ) : room.state === 'SOUND' ? (
           <SoundPlayer
             sound={room.roundSound}
-            timer={room.timer}
+            round={room.currentRound || 1}
           />
         ) : room.state === 'RECORDING' ? (
           <Recorder
             sound={room.roundSound}
-            timer={room.timer}
             player={player}
             onSubmitRecording={handleSubmitRecording}
           />
