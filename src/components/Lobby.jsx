@@ -38,6 +38,39 @@ export default function Lobby({
   const [errorMessage, setErrorMessage] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // Pre-Game Audio Check State
+  const [testingMic, setTestingMic] = useState(false);
+  const [testVolume, setTestVolume] = useState(0);
+  const [micVerified, setMicVerified] = useState(() => audioEngine.isMicReady());
+
+  // Explicit Pre-Game Microphone Permission & Initialization Check
+  const handleCheckAndInitMic = async () => {
+    soundSynthesizer.playUiSound('click');
+    setTestingMic(true);
+    const stream = await audioEngine.initMicrophone();
+    if (!stream) {
+      setTestingMic(false);
+      setMicVerified(false);
+      return false;
+    }
+    setMicVerified(true);
+    if (onRequestMic) onRequestMic();
+
+    // Start live audio sensitivity monitor
+    const stopMonitor = audioEngine.startLiveLevelMonitor((level) => {
+      setTestVolume(level);
+      if (level > 0.03) {
+        setMicVerified(true);
+      }
+    });
+
+    setTimeout(() => {
+      setTestingMic(false);
+      stopMonitor();
+    }, 4000);
+    return true;
+  };
+
   // Randomize nickname
   const handleRandomizeName = () => {
     soundSynthesizer.playUiSound('click');
@@ -79,40 +112,58 @@ export default function Lobby({
             Listen to iconic Egyptian sounds, say them into your mic, and see who did the best sound!
           </p>
 
-          {/* Persistent Microphone Status Banner (Always Allow for all rounds) */}
-          {!micReady ? (
-            <div
-              onClick={() => {
-                soundSynthesizer.playUiSound('click');
-                onRequestMic && onRequestMic();
-              }}
-              className="mb-4 p-3 bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-transparent border-2 border-amber-400 rounded-2xl flex items-center justify-between cursor-pointer transition shadow-[3px_3px_0px_#fbbf24] hover:scale-[1.01] active:scale-95 group text-left"
-            >
-              <div className="flex items-center gap-2.5">
-                <span className="text-2xl animate-bounce">🎙️</span>
+          {/* Pre-Game Audio Check / Enable Mic (Explicit Pre-Round Verification) */}
+          <div className="mb-4 p-3.5 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[3px_3px_0px_#000] text-left">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🎙️</span>
                 <div>
-                  <h4 className="text-xs sm:text-sm font-black text-white flex items-center gap-1.5">
-                    <span>Allow Microphone Access</span>
-                    <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.2 rounded font-black">TAP HERE</span>
+                  <h4 className="text-xs sm:text-sm font-black text-white">
+                    Pre-Game Audio Check (فحص المايكروفون)
                   </h4>
-                  <p className="text-[11px] text-amber-200/90 font-semibold">
-                    Always allow mic access so rounds record without popups!
+                  <p className="text-[10px] text-slate-400 font-semibold">
+                    Test your microphone now so your rounds record smoothly!
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3 pointer-events-none"
-              >
-                Allow 🎤
-              </button>
+              {micVerified ? (
+                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 text-[11px] font-black border border-emerald-500/40">
+                  Ready ✅
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCheckAndInitMic}
+                  className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3"
+                >
+                  {testingMic ? 'Testing... 🔊' : 'Enable Mic 🎤'}
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="mb-4 py-2 px-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-center gap-2 text-[11px] sm:text-xs font-bold text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Microphone Allowed & Active for All Rounds ✅</span>
-            </div>
-          )}
+
+            {/* Live Volume Meter during test or verified state */}
+            {(testingMic || micVerified) && (
+              <div className="mt-2 pt-2 border-t border-white/10">
+                <div className="flex justify-between items-center text-[10px] font-bold text-slate-300 mb-1">
+                  <span>Mic Sensitivity (حساسية الصوت):</span>
+                  <span className={testVolume > 0.03 ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
+                    {testVolume > 0.03 ? 'Voice Detected! 🔊' : 'Speak into your mic to test...'}
+                  </span>
+                </div>
+                <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-black">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-400 to-amber-400 transition-all duration-75 rounded-full"
+                    style={{ width: `${Math.min(100, Math.max(5, testVolume * 100))}%` }}
+                  />
+                </div>
+                {micVerified && (
+                  <div className="mt-1.5 text-center text-[10px] font-bold text-emerald-400">
+                    ✅ Microphone verified! Ready to capture your vocal takes.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Player Name Input */}
           <div className="mb-4 text-left">
@@ -195,9 +246,12 @@ export default function Lobby({
           {!joinMode ? (
             <div className="space-y-3">
               <button
-                onClick={() => {
+                onClick={async () => {
+                  if (!micVerified) {
+                    const ok = await handleCheckAndInitMic();
+                    if (!ok) return;
+                  }
                   soundSynthesizer.playUiSound('go');
-                  audioEngine.initMic().catch(() => {});
                   onCreateRoom({ playerName: name, avatar: selectedCharacter.avatar, character: selectedCharacter });
                 }}
                 className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2"
@@ -207,9 +261,11 @@ export default function Lobby({
               </button>
 
               <button
-                onClick={() => {
+                onClick={async () => {
                   soundSynthesizer.playUiSound('click');
-                  audioEngine.initMic().catch(() => {});
+                  if (!micVerified) {
+                    handleCheckAndInitMic().catch(() => {});
+                  }
                   setJoinMode(true);
                 }}
                 className="btn-arcade btn-arcade-cyan w-full text-sm sm:text-base py-3 flex items-center justify-center gap-2"
@@ -235,13 +291,16 @@ export default function Lobby({
               </div>
 
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!roomCodeInput.trim()) {
                     setErrorMessage('Please enter a room code first!');
                     return;
                   }
+                  if (!micVerified) {
+                    const ok = await handleCheckAndInitMic();
+                    if (!ok) return;
+                  }
                   soundSynthesizer.playUiSound('go');
-                  audioEngine.initMic().catch(() => {});
                   onJoinRoom({ roomId: roomCodeInput.trim(), playerName: name, avatar: selectedCharacter.avatar, character: selectedCharacter }, (err) => {
                     if (err) setErrorMessage(err);
                   });
@@ -409,14 +468,45 @@ export default function Lobby({
           </div>
         </div>
 
+        {/* Microphone Status Banner in Active Room */}
+        <div className="p-3 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xl">🎙️</span>
+            <div>
+              <span className="text-xs font-black text-white block">
+                Microphone Readiness (حالة المايك):
+              </span>
+              <span className="text-[10px] text-slate-400 font-semibold block">
+                {micVerified ? 'Microphone enabled & ready!' : 'Click to enable microphone before starting!'}
+              </span>
+            </div>
+          </div>
+          {micVerified ? (
+            <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 text-xs font-black border border-emerald-500/40">
+              Ready ✅
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleCheckAndInitMic}
+              className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3"
+            >
+              {testingMic ? 'Testing... 🔊' : 'Enable Mic 🎤'}
+            </button>
+          )}
+        </div>
+
         {/* Start Game Action Button */}
         <div className="pt-2">
           {isHost ? (
             <button
-              onClick={() => {
+              onClick={async () => {
+                if (!micVerified) {
+                  const ok = await handleCheckAndInitMic();
+                  if (!ok) return;
+                }
                 soundSynthesizer.playUiSound('go');
-                onRequestMic && onRequestMic();
-                audioEngine.initMic().catch(() => {});
+                if (onRequestMic) onRequestMic();
                 onStartGame();
               }}
               className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"

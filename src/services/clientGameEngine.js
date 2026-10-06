@@ -227,12 +227,12 @@ class ClientGameEngine {
       // 2. Play Target Sound (Max 6s)
       const soundDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
       this.runCountdown(soundDuration, 'RECORDING', () => {
-        // 3. Recording Window ("MIMIC IT NOW") (Max 6s)
-        const recordDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
+        // 3. Recording Window (Max 9s, generous buffer for smooth mic submission)
+        const recordDuration = Math.min(9, Math.max(6, Math.ceil(sound.duration || 4.0) + 3));
         this.runCountdown(recordDuration, 'PROCESSING', () => {
           setTimeout(() => {
             this.completeRound();
-          }, 800);
+          }, 1500);
         });
       });
     });

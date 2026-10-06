@@ -36,58 +36,99 @@ class AudioEngine {
     return tracks.length > 0 && tracks.some((t) => t.readyState === 'live');
   }
 
-  // Request Microphone permissions & return stream (safe for iOS Safari & Android)
-  async initMic() {
-    if (this.isMicReady()) {
-      try {
-        this.micStream.getAudioTracks().forEach((t) => { t.enabled = true; });
-      } catch (e) {}
-      return this.micStream;
-    }
+  // Explicit Microphone Permission & Initialization Check
+  async initMicrophone() {
     try {
-      this.micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      return this.micStream;
-    } catch (err) {
-      try {
-        // Fallback for iOS / older browsers with basic constraints
-        this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.unlockAudioContext();
+      if (this.isMicReady()) {
+        try {
+          this.micStream.getAudioTracks().forEach((t) => { t.enabled = true; });
+        } catch (e) {}
+        this.setupAnalyser(this.micStream);
         return this.micStream;
-      } catch (err2) {
-        console.error('Mic access error:', err2);
-        throw new Error('Please allow microphone access to play Aledha!');
       }
+
+      // Universal audio constraint for mobile & desktop
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.micStream = stream;
+      this.setupAnalyser(stream);
+      return stream;
+    } catch (err) {
+      console.error("Microphone access denied or error:", err);
+      if (typeof window !== 'undefined' && window.alert) {
+        alert("يرجى تفعيل المايكروفون من إعدادات المتصفح لتتمكن من اللعب!");
+      }
+      return null;
     }
   }
 
-  // Setup AnalyserNode for real-time visualizer
-  // Setup AnalyserNode for real-time visualizer
+  // Request Microphone permissions & return stream
+  async initMic() {
+    return await this.initMicrophone();
+  }
+
+  // Start live mic level monitoring for Pre-Game Audio Check in lobby
+  startLiveLevelMonitor(onLevelUpdate) {
+    if (!this.micStream) return () => {};
+    const analyser = this.setupAnalyser(this.micStream);
+    if (!analyser) return () => {};
+
+    let isRunning = true;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const checkLevel = () => {
+      if (!isRunning) return;
+      analyser.getByteTimeDomainData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const norm = (dataArray[i] - 128) / 128.0;
+        sum += norm * norm;
+      }
+      const rms = Math.sqrt(sum / bufferLength);
+      if (onLevelUpdate) onLevelUpdate(Math.min(1.0, rms * 5.5));
+      requestAnimationFrame(checkLevel);
+    };
+    requestAnimationFrame(checkLevel);
+
+    return () => { isRunning = false; };
+  }
+
+  // Setup AnalyserNode for real-time visualizer without resetting active stream
   setupAnalyser(stream) {
     const ctx = this.getAudioContext();
     if (ctx.state === 'suspended') {
       ctx.resume().catch(() => {});
     }
+    const targetStream = stream || this.micStream;
+    if (!targetStream) return this.analyser;
+
     try {
-      if (this._analyserSource) {
-        try { this._analyserSource.disconnect(); } catch (e) {}
+      if (!this._analyserSource || this._currentStream !== targetStream) {
+        if (this._analyserSource) {
+          try { this._analyserSource.disconnect(); } catch (e) {}
+        }
+        this._currentStream = targetStream;
+        this._analyserSource = ctx.createMediaStreamSource(targetStream);
       }
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.4;
-      source.connect(analyser);
-      this._analyserSource = source;
-      this.analyser = analyser;
-      return analyser;
+
+      if (!this.analyser) {
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.4;
+        this._analyserSource.connect(analyser);
+        this.analyser = analyser;
+      }
+      return this.analyser;
     } catch (e) {
       console.warn('setupAnalyser error:', e);
       return this.analyser;
     }
+  }
+
+  // Soft stop mic - keeps tracks active so the browser never prompts for permission on each round
+  stopMic() {
+    // Intentionally keep audio tracks alive across rounds
   }
 
   // Record audio for durationMs: records using MediaRecorder with PCM fallback for 100% device compatibility
@@ -152,7 +193,7 @@ class AudioEngine {
         let isCapturing = true;
 
         try {
-          sourceNode = ctx.createMediaStreamSource(stream);
+          sourceNode = this._analyserSource || ctx.createMediaStreamSource(stream);
           scriptNode = ctx.createScriptProcessor(4096, 1, 1);
           this._activeProcessor = scriptNode; // Prevent garbage collection!
 
@@ -185,25 +226,23 @@ class AudioEngine {
         setTimeout(async () => {
           isCapturing = false;
 
-          // 1. Stop MediaRecorder if running
+          // 1. Stop MediaRecorder if running and await final chunk flush
           if (mediaRecorder && mediaRecorder.state === 'recording') {
-            try {
-              mediaRecorder.stop();
-            } catch (e) {}
+            await new Promise((res) => {
+              mediaRecorder.onstop = () => res();
+              try { mediaRecorder.stop(); } catch (e) { res(); }
+              setTimeout(res, 200);
+            });
           }
 
-          // 2. Disconnect ScriptProcessor nodes
+          // 2. Disconnect ScriptProcessor nodes only
           if (scriptNode) {
             try {
               scriptNode.disconnect();
               if (dummyGain) dummyGain.disconnect();
-              if (sourceNode) sourceNode.disconnect();
             } catch (e) {}
             this._activeProcessor = null;
           }
-
-          // Small delay for MediaRecorder chunk flushing
-          await new Promise((r) => setTimeout(r, 80));
 
           let finalBlob = null;
           let finalDataUrl = null;

@@ -13,27 +13,37 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   const animFrameRef = useRef(null);
   const recordedSoundIdRef = useRef(null);
 
+  // Keep latest onSubmitRecording in a stable ref so re-renders don't cancel recording session
+  const onSubmitRef = useRef(onSubmitRecording);
   useEffect(() => {
-    const soundKey = sound?.id || sound?.name || `round-sound-${timer}`;
+    onSubmitRef.current = onSubmitRecording;
+  });
+
+  const soundKey = sound?.id || sound?.name || 'current-round-sound';
+
+  useEffect(() => {
     if (recordedSoundIdRef.current === soundKey) return;
     recordedSoundIdRef.current = soundKey;
 
     let isMounted = true;
     audioEngine.unlockAudioContext();
 
-    // Hard-cap recording duration strictly to max 6.0 seconds
-    const durationMs = Math.min(6000, Math.max(1500, Math.ceil((sound?.duration || 3.5) * 1000)));
+    // Clamp recording strictly to 2.5s - 5.0s so it finishes before the 6-9s room countdown!
+    const durationMs = Math.min(5000, Math.max(2500, Math.ceil((sound?.duration || 3.5) * 1000)));
 
     const startRecordingSession = async () => {
       try {
         setIsCapturing(true);
         soundSynthesizer.playUiSound('go');
 
-        // 1. Immediately acquire active microphone stream & setup analyser for live visualizer
-        const stream = await audioEngine.initMic();
+        // 1. Ensure microphone stream is active & setup analyser
+        const stream = await audioEngine.initMicrophone();
+        if (!stream) {
+          throw new Error('Microphone permission required! Please allow mic access.');
+        }
         const liveAnalyser = audioEngine.setupAnalyser(stream);
 
-        // 2. Start live visualizer on canvas immediately
+        // 2. Start live visualizer on canvas
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
@@ -68,7 +78,6 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
 
               for (let i = 0; i < bufferLength; i++) {
                 const norm = (dataArray[i] - 128) / 128.0;
-                // Strong vocal fluctuation multiplier (up to 7.0x) so vocal waves are prominently visible
                 const amp = norm * 7.0;
                 const y = Math.max(4, Math.min(canvas.height - 4, centerY + (amp * (centerY - 6))));
                 if (i === 0) {
@@ -80,7 +89,6 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
               }
               ctx.stroke();
             } else {
-              // Idle guideline
               ctx.strokeStyle = '#fbbf24';
               ctx.beginPath();
               ctx.moveTo(0, centerY);
@@ -97,7 +105,7 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
           renderVisualizer();
         }
 
-        // 3. Fetch reference audio buffer in parallel without blocking recording!
+        // 3. Fetch reference audio buffer in parallel without blocking recording
         const refBufferPromise = soundSynthesizer.getReferenceAudioBuffer(sound).catch(() => null);
 
         // 4. Record user audio for durationMs
@@ -115,34 +123,35 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         // Score recording against target Egyptian sound
         const scoreResult = audioEngine.scoreRecording(userRec.audioBuffer, refBuffer);
 
-        // Submit to room with playable audio URL & data URL
-        const recordedAudioUrl = userRec.objectUrl;
-        const audioDataUrl = userRec.dataUrl;
-
-        onSubmitRecording({
-          recordedAudioUrl,
-          audioDataUrl,
-          score: scoreResult.totalScore,
-          rhythmScore: scoreResult.rhythmScore,
-          pitchScore: scoreResult.pitchScore,
-          energyScore: scoreResult.energyScore,
-          tier: scoreResult.tier
-        });
+        // Submit recording data immediately
+        if (onSubmitRef.current) {
+          onSubmitRef.current({
+            recordedAudioUrl: userRec.objectUrl,
+            audioDataUrl: userRec.dataUrl,
+            score: scoreResult.totalScore,
+            rhythmScore: scoreResult.rhythmScore,
+            pitchScore: scoreResult.pitchScore,
+            energyScore: scoreResult.energyScore,
+            tier: scoreResult.tier
+          });
+        }
       } catch (err) {
-        console.error('Recording failed:', err);
+        console.error('Recording session error:', err);
         if (isMounted) {
           setMicError(err.message || 'Microphone error occurred');
           setIsCapturing(false);
-          // Fallback submission if permission was denied
-          onSubmitRecording({
-            recordedAudioUrl: null,
-            audioDataUrl: null,
-            score: 25,
-            rhythmScore: 20,
-            pitchScore: 25,
-            energyScore: 30,
-            tier: audioEngine.getEgyptianRatingTier(25)
-          });
+          // Fallback submission if mic failed
+          if (onSubmitRef.current) {
+            onSubmitRef.current({
+              recordedAudioUrl: null,
+              audioDataUrl: null,
+              score: 35,
+              rhythmScore: 30,
+              pitchScore: 35,
+              energyScore: 40,
+              tier: audioEngine.getEgyptianRatingTier(35)
+            });
+          }
         }
       }
     };
@@ -154,7 +163,7 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       audioEngine.stopMic();
     };
-  }, [sound, onSubmitRecording]);
+  }, [soundKey]);
 
   return (
     <div

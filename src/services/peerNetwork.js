@@ -365,12 +365,12 @@ class PeerNetwork {
       // 2. Play Target Sound
       const soundDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
       this.runCountdown(soundDuration, 'RECORDING', () => {
-        // 3. Recording Window
-        const recordDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
+        // 3. Recording Window (generous window so player never gets cut off prematurely before submission)
+        const recordDuration = Math.min(9, Math.max(6, Math.ceil(sound.duration || 4.0) + 3));
         this.runCountdown(recordDuration, 'PROCESSING', () => {
           setTimeout(() => {
             this.completeRoundRecordings();
-          }, 800);
+          }, 1500);
         });
       });
     });
@@ -467,15 +467,15 @@ class PeerNetwork {
           character: player.character || null,
           isBot: false,
           isAI: false,
-          score: 25,
-          rhythmScore: 20,
-          pitchScore: 25,
-          energyScore: 30,
+          score: 40,
+          rhythmScore: 35,
+          pitchScore: 40,
+          energyScore: 45,
           tier: {
-            badge: "المهم المشاركة والروح الرياضية! 🤝",
-            badgeEn: "Good Sportsmanship! 🤝",
+            badge: "محاولة طيبة 👏",
+            badgeEn: "Good Effort! 👏",
             color: "#64748B",
-            reaction: "المهم المشاركة والروح الرياضية والضحكة الحلوة! 🤝"
+            reaction: "محاولة طيبة وروح رياضية عالية! 👏"
           },
           audioDataUrl: null,
           recordedAudioUrl: null

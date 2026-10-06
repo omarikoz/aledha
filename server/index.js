@@ -121,13 +121,13 @@ function startRound(room) {
     // 2. Play Target Sound (synchronized playback, strictly clamped to max 6 seconds!)
     const soundDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
     runCountdown(room, soundDuration, 'RECORDING', () => {
-      // 3. Recording Window ("MIMIC IT NOW!") - strictly clamped to max 6 seconds!
-      const recordDuration = Math.min(6, Math.max(2, Math.ceil(sound.duration || 4.0)));
+      // 3. Recording Window - generous buffer so player is never prematurely timed out
+      const recordDuration = Math.min(9, Math.max(6, Math.ceil(sound.duration || 4.0) + 3));
       runCountdown(room, recordDuration, 'PROCESSING', () => {
         // Buffer for network payload arrival
         setTimeout(() => {
           completeRoundRecordings(room);
-        }, 800);
+        }, 1500);
       });
     });
   });

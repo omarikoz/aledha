@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from './components/Header.jsx';
 import Lobby from './components/Lobby.jsx';
 import Countdown from './components/Countdown.jsx';
@@ -39,14 +39,16 @@ export default function App() {
     // 1. Pre-warm microphone permission immediately on site load
     handleRequestMic();
 
-    // 2. Unlock AudioContext and re-check mic on first user touch/tap anywhere
+    // 2. Unlock AudioContext and re-check mic on first user touch/tap
     const unlock = () => {
       audioEngine.unlockAudioContext();
-      handleRequestMic();
+      if (!audioEngine.isMicReady()) {
+        handleRequestMic();
+      }
     };
-    window.addEventListener('touchstart', unlock, { passive: true });
-    window.addEventListener('click', unlock, { passive: true });
-    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('touchstart', unlock, { passive: true, once: true });
+    window.addEventListener('click', unlock, { passive: true, once: true });
+    window.addEventListener('pointerdown', unlock, { passive: true, once: true });
     return () => {
       window.removeEventListener('touchstart', unlock);
       window.removeEventListener('click', unlock);
@@ -143,7 +145,7 @@ export default function App() {
   };
 
   // Recorder Submit
-  const handleSubmitRecording = (recordingData) => {
+  const handleSubmitRecording = useCallback((recordingData) => {
     if (!room?.id) return;
     if (recordingData.recordedAudioUrl) {
       setLocalRecordedAudioUrl(recordingData.recordedAudioUrl);
@@ -153,7 +155,7 @@ export default function App() {
     } else {
       socket.emit('submit_recording', { roomId: room.id, recordingData });
     }
-  };
+  }, [room?.id]);
 
   // Reveal Step
   const handleNextRevealStep = () => {

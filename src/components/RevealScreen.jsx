@@ -37,7 +37,12 @@ export default function RevealScreen({
   };
 
   const currentRec = recordings[revealIndex] || recordings[0] || fallbackRec;
-  const isHost = Boolean(player?.isHost);
+  const isHost = Boolean(
+    player?.isHost ||
+    (room?.hostId && player?.id && room.hostId === player.id) ||
+    !room?.players ||
+    room?.players?.length <= 1
+  );
   const isLastPlayer = revealIndex >= recordings.length - 1;
 
   // Match contestant character profile
@@ -304,11 +309,22 @@ export default function RevealScreen({
               <ChevronRight size={20} />
             </button>
           ) : (
-            <div className="text-center p-3 bg-slate-900/90 border border-white/10 rounded-2xl">
-              <span className="text-xs sm:text-sm font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                <span>⏳</span>
-                <span>Waiting for Host to advance to the next contestant...</span>
-              </span>
+            <div className="space-y-2">
+              <div className="text-center p-2.5 bg-slate-900/90 border border-white/10 rounded-2xl">
+                <span className="text-xs sm:text-sm font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
+                  <span>⏳</span>
+                  <span>Waiting for Host to advance to the next contestant...</span>
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  soundSynthesizer.playUiSound('click');
+                  onNextRevealStep();
+                }}
+                className="w-full text-center text-xs text-slate-400 hover:text-white underline font-bold py-1 transition"
+              >
+                Skip / Continue ⏩
+              </button>
             </div>
           )}
         </div>
