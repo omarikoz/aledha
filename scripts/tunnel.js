@@ -30,9 +30,7 @@ function printBanner(url) {
 
 if (fs.existsSync(cloudflaredExe)) {
   console.log('🚀 Starting Cloudflare Quick Tunnel on port 3001...');
-  tunnelProcess = spawn(cloudflaredExe, ['tunnel', '--url', 'http://localhost:3001'], {
-    shell: true
-  });
+  tunnelProcess = spawn(cloudflaredExe, ['tunnel', '--url', 'http://localhost:3001']);
 } else {
   console.log('⚡ cloudflared.exe not found, falling back to localtunnel on port 3001...');
   tunnelProcess = spawn('npx', ['--yes', 'localtunnel', '--port', '3001'], {
