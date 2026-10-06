@@ -32,6 +32,7 @@ export default function App() {
     setIsMuted(next);
     voiceChat.setEmergencyMute(next);
     if (room?.id && socket.connected) {
+      socket.emit('toggle_mute', { roomId: room.id, isMuted: next });
       socket.emit('player_toggle_mute', { roomId: room.id, isMuted: next });
     }
   }, [room?.id]);
@@ -158,7 +159,7 @@ export default function App() {
     socket.on('reveal_player_recording', handleUniversalAudioReveal);
 
     // Player Mute State Updates
-    socket.on('player_mute_updated', ({ playerId, isMuted }) => {
+    const handleMuteChange = ({ playerId, isMuted }) => {
       setRoom((prev) => {
         if (!prev) return prev;
         const updatedPlayers = (prev.players || []).map((p) => {
@@ -175,7 +176,10 @@ export default function App() {
         }
         return prev;
       });
-    });
+    };
+
+    socket.on('player_mute_changed', handleMuteChange);
+    socket.on('player_mute_updated', handleMuteChange);
 
     socket.on('game_aborted', (data) => {
       if (!peerNetwork.roomId) {
@@ -198,7 +202,8 @@ export default function App() {
       socket.off('phase_change');
       socket.off('play_player_reveal', handleUniversalAudioReveal);
       socket.off('reveal_player_recording', handleUniversalAudioReveal);
-      socket.off('player_mute_updated');
+      socket.off('player_mute_changed', handleMuteChange);
+      socket.off('player_mute_updated', handleMuteChange);
       socket.off('game_aborted');
     };
   }, []);

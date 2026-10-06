@@ -96,9 +96,8 @@ class VoiceChatService {
     if (!micStream) return;
     this.localStream = micStream;
 
-    const canTransmit = !this.isEmergencyMuted && !this.isPhaseMuted;
     micStream.getTracks().forEach((track) => {
-      track.enabled = canTransmit;
+      track.enabled = !this.isEmergencyMuted;
       const senders = pc.getSenders ? pc.getSenders() : [];
       const existingSender = senders.find((s) => s.track && s.track.kind === track.kind);
       if (existingSender) {
@@ -401,21 +400,22 @@ class VoiceChatService {
   }
 
   applyMuteStates() {
-    const canTransmit = !this.isEmergencyMuted && !this.isPhaseMuted;
+    const canTransmitVoice = !this.isEmergencyMuted && !this.isPhaseMuted;
 
-    // 1. Control local microphone tracks
+    // 1. Control local microphone tracks: only emergency mute silences the hardware mic.
+    // Phase muting MUST NOT disable the hardware mic track so players can record their voice take!
     if (this.localStream) {
       this.localStream.getAudioTracks().forEach((track) => {
-        track.enabled = canTransmit;
+        track.enabled = !this.isEmergencyMuted;
       });
     }
 
-    // 2. Control RTCPeerConnection sender tracks
+    // 2. Control RTCPeerConnection sender tracks (silences WebRTC mesh voice during SOUND/RECORDING phases)
     this.peers.forEach((pc) => {
       try {
         pc.getSenders().forEach((sender) => {
           if (sender.track && sender.track.kind === 'audio') {
-            sender.track.enabled = canTransmit;
+            sender.track.enabled = canTransmitVoice;
           }
         });
       } catch (e) {}

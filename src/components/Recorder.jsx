@@ -164,7 +164,6 @@ export default function Recorder({ sound, timer, player, room, isMuted, onToggle
     return () => {
       isMounted = false;
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      audioEngine.stopMic();
     };
   }, [soundKey]);
 

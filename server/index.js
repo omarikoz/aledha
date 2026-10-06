@@ -567,21 +567,30 @@ io.on('connection', (socket) => {
     handleResetToLobby(roomId);
   });
 
-  // Player Mute State Toggle
-  socket.on('player_toggle_mute', ({ roomId, isMuted }) => {
-    if (!roomId) return;
-    const room = rooms.get(roomId);
+  // Player Mute State Toggle (Real-time broadcast to room)
+  const handleToggleMute = ({ roomId, isMuted }) => {
+    const targetRoomId = roomId || socket.data.roomId;
+    if (!targetRoomId) return;
+    const room = rooms.get(targetRoomId);
     if (room) {
       const player = room.players.get(socket.id);
       if (player) {
         player.isMuted = !!isMuted;
       }
     }
-    io.to(roomId).emit('player_mute_updated', {
+    io.to(targetRoomId).emit('player_mute_changed', {
       playerId: socket.id,
       isMuted: !!isMuted
     });
-  });
+    io.to(targetRoomId).emit('player_mute_updated', {
+      playerId: socket.id,
+      isMuted: !!isMuted
+    });
+    broadcastRoom(targetRoomId);
+  };
+
+  socket.on('toggle_mute', handleToggleMute);
+  socket.on('player_toggle_mute', handleToggleMute);
 
   // WebRTC Mesh Voice Chat Signaling Relay
   socket.on('voice_join', ({ roomId }) => {
@@ -717,12 +726,16 @@ io.on('connection', (socket) => {
   });
 });
 
-// Fallback to index.html for SPA if dist exists
-if (fs.existsSync(distPath)) {
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
+// Serve production build from dist for Render/Railway/Public hosting
+app.use(express.static(distPath));
+app.get('*', (req, res) => {
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.send('🎤 Aledha Game Server running. Build the frontend using: npm run build');
+  }
+});
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
