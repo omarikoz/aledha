@@ -106,9 +106,19 @@ export default function App() {
     // Universal audio reveal listener: Every connected player (speaker AND listeners) plays simultaneously
     const handleUniversalAudioReveal = (data) => {
       setRevealAudioPayload(data);
-      const audioData = data?.audioData || data?.audioDataUrl || data?.recordedAudioUrl || (data?.playerId === player?.id ? localRecordedAudioUrl : null);
+      const audioData = data?.audioData || data?.audioDataUrl || data?.recordedAudioUrl;
       if (audioData) {
-        audioEngine.playAudioData(audioData, data?.mimeType || 'audio/webm');
+        console.log('[Audio Reveal] Playing contestant recording unconditionally for socket:', socket.id);
+        try {
+          const audio = new Audio(audioData);
+          audio.volume = 1.0;
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((err) => console.error("[Audio Reveal] Playback error:", err));
+          }
+        } catch (err) {
+          console.error("[Audio Reveal] new Audio error:", err);
+        }
       }
     };
 
@@ -334,14 +344,31 @@ export default function App() {
     }
   }, [room?.state]);
 
-  // Leave Room / Main Menu
-  const handleLeaveRoom = () => {
-    voiceChat.disconnect();
-    peerNetwork.cleanup();
+  // Leave Room / Exit Game
+  const handleExitGame = useCallback(() => {
+    if (!room) return;
+    const isMatchActive = room.state && room.state !== 'LOBBY' && room.state !== 'GAME_OVER' && room.state !== 'ABORTED';
+    if (isMatchActive) {
+      const confirmed = window.confirm("Are you sure you want to leave? This will end the match for everyone.");
+      if (!confirmed) return;
+    }
+
+    try {
+      soundSynthesizer.stopAll();
+      voiceChat.disconnect();
+      peerNetwork.cleanup();
+      if (room.id && socket.connected) {
+        socket.emit('leave_room', { roomId: room.id });
+      }
+    } catch (e) {
+      console.warn('Error during leave room:', e);
+    }
+
     setRoom(null);
     setPlayer(null);
-    window.location.reload();
-  };
+    setRevealAudioPayload(null);
+    setLocalRecordedAudioUrl(null);
+  }, [room]);
 
   return (
     <div className="min-h-screen flex flex-col justify-between selection:bg-amber-400 selection:text-black">
@@ -354,6 +381,7 @@ export default function App() {
         onOpenSoundTester={() => setIsTesterOpen(true)}
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
+        onExitGame={handleExitGame}
       />
 
       {/* Main Game Screen depending on Room State */}
@@ -368,6 +396,7 @@ export default function App() {
             onJoinRoom={handleJoinRoom}
             onStartGame={handleStartGame}
             onUpdateSettings={handleUpdateSettings}
+            onExitGame={handleExitGame}
           />
         ) : room.state === 'COUNTDOWN' || room.state === 'BUFFER' ? (
           <Countdown
@@ -430,7 +459,7 @@ export default function App() {
                   Return to Lobby
                 </button>
                 <button
-                  onClick={handleLeaveRoom}
+                  onClick={handleExitGame}
                   className="btn-arcade btn-arcade-dark py-3.5 px-5 text-sm"
                 >
                   Main Menu

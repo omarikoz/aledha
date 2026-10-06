@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Volume2, Users, Copy, Check, Sparkles, Music, Mic, MicOff } from 'lucide-react';
+import { Volume2, Users, Copy, Check, Sparkles, Music, Mic, MicOff, LogOut } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
 export default function Header({
@@ -9,7 +9,8 @@ export default function Header({
   onRequestMic,
   onOpenSoundTester,
   isMuted = false,
-  onToggleMute
+  onToggleMute,
+  onExitGame
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -104,6 +105,19 @@ export default function Header({
             <span className="text-[10px] text-amber-400 font-bold hidden sm:inline">You:</span>
             <span className="text-xs sm:text-sm font-bold text-white max-w-[85px] sm:max-w-[120px] truncate">{player.name}</span>
           </div>
+        )}
+
+        {/* Exit Game / Leave Room Button */}
+        {room && (
+          <button
+            type="button"
+            onClick={onExitGame}
+            title="Leave room and return to menu"
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border-2 font-black text-xs sm:text-sm bg-red-600/90 hover:bg-red-500 text-white border-black shadow-[2px_2px_0px_#000] active:scale-95 transition"
+          >
+            <LogOut size={14} className="stroke-[2.5]" />
+            <span className="hidden sm:inline">Exit</span>
+          </button>
         )}
       </div>
     </header>

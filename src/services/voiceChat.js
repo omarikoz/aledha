@@ -96,29 +96,26 @@ class VoiceChatService {
     if (!micStream) return;
     this.localStream = micStream;
 
-    const tracks = micStream.getAudioTracks ? micStream.getAudioTracks() : [];
-    if (tracks.length === 0) return;
-    const track = tracks[0];
-
     const canTransmit = !this.isEmergencyMuted && !this.isPhaseMuted;
-    track.enabled = canTransmit;
-
-    const senders = pc.getSenders ? pc.getSenders() : [];
-    const existingSender = senders.find((s) => s.track && s.track.kind === 'audio');
-    if (existingSender) {
-      if (existingSender.track !== track) {
-        existingSender.replaceTrack(track).catch((err) => {
-          console.warn('[WebRTC] replaceTrack error:', err);
-        });
+    micStream.getTracks().forEach((track) => {
+      track.enabled = canTransmit;
+      const senders = pc.getSenders ? pc.getSenders() : [];
+      const existingSender = senders.find((s) => s.track && s.track.kind === track.kind);
+      if (existingSender) {
+        if (existingSender.track !== track) {
+          existingSender.replaceTrack(track).catch((err) => {
+            console.warn('[WebRTC] replaceTrack error:', err);
+          });
+        }
+      } else {
+        try {
+          pc.addTrack(track, micStream);
+          console.log('[WebRTC] Local track attached to peer connection');
+        } catch (err) {
+          console.warn('[WebRTC] pc.addTrack error:', err);
+        }
       }
-    } else {
-      try {
-        pc.addTrack(track, micStream);
-        console.log('[WebRTC] Local audio track attached to peer connection');
-      } catch (err) {
-        console.warn('[WebRTC] pc.addTrack error:', err);
-      }
-    }
+    });
   }
 
   bindSocketEvents() {
@@ -203,7 +200,13 @@ class VoiceChatService {
           audioEl.autoplay = true;
           audioEl.playsInline = true;
           audioEl.muted = false; // Remote peer audio elements must NEVER be muted!
-          audioEl.style.display = 'none';
+          audioEl.style.position = 'fixed';
+          audioEl.style.top = '-9999px';
+          audioEl.style.left = '-9999px';
+          audioEl.style.width = '1px';
+          audioEl.style.height = '1px';
+          audioEl.style.opacity = '0';
+          audioEl.style.pointerEvents = 'none';
           document.body.appendChild(audioEl);
           this.audioElements.set(remotePeerId, audioEl);
         }

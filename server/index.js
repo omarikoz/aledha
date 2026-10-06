@@ -626,6 +626,50 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Explicit Leave Room / Exit Game
+  socket.on('leave_room', ({ roomId }) => {
+    const targetRoomId = roomId || socket.data.roomId;
+    if (targetRoomId) {
+      socket.leave(targetRoomId);
+      socket.to(targetRoomId).emit('peer_left', { peerId: socket.id });
+      socket.to(targetRoomId).emit('voice_user_left', { peerId: socket.id });
+
+      const room = rooms.get(targetRoomId);
+      if (room) {
+        const leavingPlayer = room.players.get(socket.id);
+        const leavingName = leavingPlayer?.name || 'A player';
+        room.players.delete(socket.id);
+
+        if (room.players.size === 0) {
+          if (room.timerInterval) clearInterval(room.timerInterval);
+          if (room.revealTimer) clearTimeout(room.revealTimer);
+          rooms.delete(targetRoomId);
+        } else {
+          if (room.hostId === socket.id) {
+            const nextHost = Array.from(room.players.values())[0];
+            if (nextHost) {
+              nextHost.isHost = true;
+              room.hostId = nextHost.id;
+            }
+          }
+
+          if (room.state !== 'LOBBY' && room.state !== 'GAME_OVER' && room.state !== 'ABORTED') {
+            if (room.timerInterval) clearInterval(room.timerInterval);
+            if (room.revealTimer) clearTimeout(room.revealTimer);
+            room.state = 'ABORTED';
+            room.abortReason = `${leavingName} left the game. The match has ended.`;
+            io.to(targetRoomId).emit('game_aborted', {
+              reason: 'player_disconnected',
+              playerName: leavingName,
+              message: `${leavingName} left the game. The match has ended.`
+            });
+          }
+          broadcastRoom(targetRoomId);
+        }
+      }
+    }
+  });
+
   // Disconnect
   socket.on('disconnect', () => {
     const roomId = socket.data.roomId;

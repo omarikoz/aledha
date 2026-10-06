@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Crown, Play, Settings, Copy, Check, Bot, Package, Lock, Mic, MicOff } from 'lucide-react';
+import { Users, Crown, Play, Settings, Copy, Check, Bot, Package, Lock, Mic, MicOff, LogOut } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundPackManager } from '../services/soundPackManager.js';
@@ -13,7 +13,8 @@ export default function Lobby({
   onCreateRoom,
   onJoinRoom,
   onStartGame,
-  onUpdateSettings
+  onUpdateSettings,
+  onExitGame
 }) {
   const [name, setName] = useState('');
   const [roomCodeInput, setRoomCodeInput] = useState('');
@@ -251,9 +252,21 @@ export default function Lobby({
       <div className="arcade-card text-left space-y-4">
         {/* Room Code Share Banner */}
         <div className="bg-slate-950/90 border-2 border-black rounded-2xl p-3 sm:p-4 text-center shadow-[3px_3px_0px_#000]">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
-            Share Room Code with Friends
-          </span>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+              Room Code
+            </span>
+            {onExitGame && (
+              <button
+                type="button"
+                onClick={onExitGame}
+                className="text-xs text-red-400 hover:text-red-300 font-bold inline-flex items-center gap-1 transition px-2 py-0.5 rounded-lg bg-red-500/10 border border-red-500/20 active:scale-95"
+              >
+                <LogOut size={12} />
+                <span>Leave Room</span>
+              </button>
+            )}
+          </div>
           <div className="flex items-center justify-center gap-2 mb-2">
             <span className="font-mono text-3xl sm:text-4xl font-black text-amber-400 tracking-wider">
               {room.id}

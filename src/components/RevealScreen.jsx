@@ -80,24 +80,43 @@ export default function RevealScreen({
   }, [isAiMode, currentRec?.playerId, rawAudioSource, room?.roundSound]);
 
 
+  const playedContestantRef = useRef(null);
+
   // Synchronized audio broadcast playback: Play contestant take to EVERYONE in the room (Speaker & Voters)
   useEffect(() => {
-    let handle = null;
-    if (rawAudioSource) {
-      setIsPlayingAudio(true);
-      handle = audioEngine.playAudioData(rawAudioSource, rawMimeType, () => {
-        setIsPlayingAudio(false);
-      });
+    const contestantKey = `${revealIndex}-${currentRec?.playerId}-${rawAudioSource ? rawAudioSource.slice(0, 30) : 'none'}`;
+    if (!rawAudioSource || playedContestantRef.current === contestantKey) return;
+    playedContestantRef.current = contestantKey;
+
+    setIsPlayingAudio(true);
+    let audio = null;
+    try {
+      audio = new Audio(rawAudioSource);
+      audio.volume = 1.0;
+      audio.onended = () => setIsPlayingAudio(false);
+      audio.onerror = () => setIsPlayingAudio(false);
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn("[RevealScreen] Playback caught error:", err);
+          setIsPlayingAudio(false);
+        });
+      }
+    } catch (e) {
+      console.error("[RevealScreen] Audio constructor error:", e);
+      setIsPlayingAudio(false);
     }
 
     return () => {
-      soundSynthesizer.stopAll();
-      if (handle?.cleanup) {
-        try { handle.cleanup(); } catch (e) {}
+      if (audio) {
+        try {
+          audio.pause();
+          audio.src = '';
+        } catch (e) {}
       }
       setIsPlayingAudio(false);
     };
-  }, [revealIndex, currentRec?.playerId, rawAudioSource, rawMimeType]);
+  }, [revealIndex, currentRec?.playerId, rawAudioSource]);
 
   const handleCastVote = () => {
     if (hasVoted || isCurrentUser || isAiMode) return;
