@@ -534,18 +534,25 @@ export default function Lobby({
           </div>
         </div>
 
-        {/* Microphone Status in Lobby */}
+        {/* Microphone & In-Game Voice Chat Status in Lobby */}
         <div className="p-3 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between">
           <div>
-            <span className="text-xs font-black text-white block">Microphone</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-black text-white">Microphone & Voice Chat</span>
+              {micVerified && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </div>
             <span className="text-[10px] text-slate-400 block">
-              {micVerified ? 'Microphone enabled & ready' : 'Enable microphone before starting'}
+              {micVerified
+                ? '🎙️ Live Voice Chat Active — Talk freely with players in lobby!'
+                : 'Enable mic to chat with friends & record your mimic sound'}
             </span>
           </div>
 
           {micVerified ? (
             <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 text-xs font-black border border-emerald-500/40">
-              ✓ Mic Ready
+              🟢 Live Voice
             </span>
           ) : (
             <button

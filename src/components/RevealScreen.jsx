@@ -79,106 +79,25 @@ export default function RevealScreen({
     return () => { isMounted = false; };
   }, [isAiMode, currentRec?.playerId, rawAudioSource, room?.roundSound]);
 
-  // Universal Client Playback (Everyone hears every player, including self)
-  const playAudio = useCallback((source, mime) => {
-    if (!source) return;
-    if (audioRef.current) {
-      try {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-      } catch (e) {}
-      audioRef.current = null;
-    }
 
-    try {
-      let playUrl = source;
-      let blobUrlToRevoke = null;
-
-      // Ensure Base64 strings are converted to standard Blob URLs
-      if (typeof source === 'string' && (source.startsWith('data:') || !source.startsWith('blob:'))) {
-        try {
-          let base64 = source;
-          let effectiveMime = mime || 'audio/webm';
-          if (source.startsWith('data:')) {
-            const parts = source.split(',');
-            const m = parts[0].match(/:(.*?);/);
-            if (m && m[1]) effectiveMime = m[1];
-            base64 = parts[1];
-          }
-          const binary = atob(base64);
-          const len = binary.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          const audioBlob = new Blob([bytes], { type: effectiveMime });
-          const audioUrl = URL.createObjectURL(audioBlob);
-          blobUrlToRevoke = audioUrl;
-          playUrl = audioUrl;
-        } catch (convErr) {
-          console.warn('Base64 decode error:', convErr);
-          playUrl = source;
-        }
-      }
-
-      const revealAudio = new Audio(playUrl);
-      revealAudio.volume = 1.0;
-      audioRef.current = revealAudio;
-      setIsPlayingAudio(true);
-
-      const playPromise = revealAudio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.error("Playback error:", err);
-          setIsPlayingAudio(false);
-        });
-      }
-
-      const cleanup = () => {
-        setIsPlayingAudio(false);
-        if (blobUrlToRevoke) {
-          try { URL.revokeObjectURL(blobUrlToRevoke); } catch (e) {}
-        }
-      };
-
-      revealAudio.onended = cleanup;
-      revealAudio.onerror = cleanup;
-    } catch (err) {
-      console.error("Universal playback error:", err);
-      setIsPlayingAudio(false);
-    }
-  }, []);
-
-  // Synchronized audio broadcast playback: Play contestant take to EVERYONE in the room
+  // Synchronized audio broadcast playback: Play contestant take to EVERYONE in the room (Speaker & Voters)
   useEffect(() => {
-    // If audio is already active/playing from the synchronized reveal socket event
-    if (window.__activeRevealAudio && !window.__activeRevealAudio.paused) {
-      setIsPlayingAudio(true);
-      const handleEnded = () => setIsPlayingAudio(false);
-      window.__activeRevealAudio.addEventListener('ended', handleEnded);
-      return () => {
-        if (window.__activeRevealAudio) {
-          window.__activeRevealAudio.removeEventListener('ended', handleEnded);
-        }
-      };
-    }
-
-    // Direct playback for all players (both contestant & listeners)
+    let handle = null;
     if (rawAudioSource) {
-      playAudio(rawAudioSource, rawMimeType);
+      setIsPlayingAudio(true);
+      handle = audioEngine.playAudioData(rawAudioSource, rawMimeType, () => {
+        setIsPlayingAudio(false);
+      });
     }
 
     return () => {
       soundSynthesizer.stopAll();
-      if (audioRef.current) {
-        try {
-          audioRef.current.pause();
-          audioRef.current.src = '';
-        } catch (e) {}
-        audioRef.current = null;
+      if (handle?.cleanup) {
+        try { handle.cleanup(); } catch (e) {}
       }
+      setIsPlayingAudio(false);
     };
-  }, [revealIndex, currentRec?.playerId, rawAudioSource, rawMimeType, revealAudioPayload, playAudio]);
+  }, [revealIndex, currentRec?.playerId, rawAudioSource, rawMimeType]);
 
   const handleCastVote = () => {
     if (hasVoted || isCurrentUser || isAiMode) return;

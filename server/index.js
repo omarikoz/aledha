@@ -565,9 +565,30 @@ io.on('connection', (socket) => {
     handleResetToLobby(roomId);
   });
 
+  // WebRTC Mesh Voice Chat Signaling Relay
+  socket.on('voice_join', ({ roomId }) => {
+    if (roomId) socket.to(roomId).emit('voice_user_joined', { peerId: socket.id });
+  });
+
+  socket.on('voice_signal', ({ targetPeerId, signal }) => {
+    if (targetPeerId) {
+      io.to(targetPeerId).emit('voice_signal', {
+        fromPeerId: socket.id,
+        signal
+      });
+    }
+  });
+
+  socket.on('voice_leave', ({ roomId }) => {
+    if (roomId) socket.to(roomId).emit('voice_user_left', { peerId: socket.id });
+  });
+
   // Disconnect
   socket.on('disconnect', () => {
     const roomId = socket.data.roomId;
+    if (roomId) {
+      socket.to(roomId).emit('voice_user_left', { peerId: socket.id });
+    }
     if (!roomId) return;
 
     const room = rooms.get(roomId);

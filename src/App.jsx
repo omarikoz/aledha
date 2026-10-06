@@ -12,6 +12,7 @@ import { socket } from './services/socket.js';
 import { soundSynthesizer } from './services/soundSynthesizer.js';
 import { peerNetwork } from './services/peerNetwork.js';
 import { audioEngine } from './services/audioEngine.js';
+import { voiceChat } from './services/voiceChat.js';
 
 export default function App() {
   const [room, setRoom] = useState(null);
@@ -29,14 +30,18 @@ export default function App() {
   const handleToggleMute = useCallback(() => {
     const next = audioEngine.toggleMute();
     setIsMuted(next);
+    voiceChat.setEmergencyMute(next);
   }, []);
 
   // Function to request microphone permission explicitly and unlock audio context
   const handleRequestMic = async () => {
     try {
       audioEngine.unlockAudioContext();
-      await audioEngine.initMic();
+      const stream = await audioEngine.initMic();
       setMicReady(true);
+      if (room?.id && stream) {
+        voiceChat.connect(room.id, stream).catch(() => {});
+      }
       return true;
     } catch (e) {
       console.warn('Microphone permission request failed:', e);
@@ -94,26 +99,9 @@ export default function App() {
     // Universal audio reveal listener: Every connected player (speaker AND listeners) plays simultaneously
     const handleUniversalAudioReveal = (data) => {
       setRevealAudioPayload(data);
-      const audioData = data?.audioData || data?.audioDataUrl || data?.recordedAudioUrl;
+      const audioData = data?.audioData || data?.audioDataUrl || data?.recordedAudioUrl || (data?.playerId === player?.id ? localRecordedAudioUrl : null);
       if (audioData) {
-        if (window.__activeRevealAudio) {
-          try {
-            window.__activeRevealAudio.pause();
-            window.__activeRevealAudio.src = '';
-          } catch (e) {}
-        }
-        try {
-          let playSrc = audioData;
-          if (typeof audioData === 'string' && !audioData.startsWith('data:') && !audioData.startsWith('blob:') && !audioData.startsWith('http')) {
-            playSrc = `data:${data.mimeType || 'audio/webm'};base64,${audioData}`;
-          }
-          const audio = new Audio(playSrc);
-          audio.volume = 1.0;
-          window.__activeRevealAudio = audio;
-          audio.play().catch((err) => console.error("Autoplay failed:", err));
-        } catch (err) {
-          console.error("Audio playback error:", err);
-        }
+        audioEngine.playAudioData(audioData, data?.mimeType || 'audio/webm');
       }
     };
 
@@ -304,8 +292,23 @@ export default function App() {
     }
   };
 
+  // Automatically connect Voice Chat when in room with microphone ready
+  useEffect(() => {
+    if (room?.id && micReady) {
+      voiceChat.connect(room.id).catch(() => {});
+    }
+  }, [room?.id, micReady]);
+
+  // Synchronize room phase with Voice Chat automatic phase muting
+  useEffect(() => {
+    if (room?.state) {
+      voiceChat.setGamePhase(room.state);
+    }
+  }, [room?.state]);
+
   // Leave Room / Main Menu
   const handleLeaveRoom = () => {
+    voiceChat.disconnect();
     peerNetwork.cleanup();
     setRoom(null);
     setPlayer(null);

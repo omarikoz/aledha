@@ -37,42 +37,57 @@ class AudioEngine {
     return this.isMuted;
   }
 
+  getMicStream() {
+    return this.micStream;
+  }
+
   onMuteChange(cb) {
     this.onMuteChangeCallbacks.add(cb);
     return () => this.onMuteChangeCallbacks.delete(cb);
   }
 
-  // Convert Base64 audioData into a Blob URL and play with new Audio()
+  // Convert Base64/Blob audioData into a playable Audio element and play with new Audio()
   playAudioData(audioData, mimeType = 'audio/webm', onEnded) {
     if (!audioData) return null;
     try {
-      let raw = audioData;
-      let type = mimeType || 'audio/webm';
-      if (typeof audioData === 'string' && audioData.startsWith('data:')) {
-        const parts = audioData.split(',');
-        const m = parts[0].match(/:(.*?);/);
-        if (m && m[1]) type = m[1];
-        raw = parts[1];
+      let audioUrl = audioData;
+      let shouldRevoke = false;
+
+      if (typeof audioData === 'string' && (audioData.startsWith('data:') || (!audioData.startsWith('blob:') && !audioData.startsWith('http')))) {
+        let raw = audioData;
+        let type = mimeType || 'audio/webm';
+        if (audioData.startsWith('data:')) {
+          const parts = audioData.split(',');
+          const m = parts[0].match(/:(.*?);/);
+          if (m && m[1]) type = m[1];
+          raw = parts[1];
+        }
+        try {
+          const binary = atob(raw);
+          const len = binary.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type });
+          audioUrl = URL.createObjectURL(blob);
+          shouldRevoke = true;
+        } catch (e) {
+          audioUrl = audioData;
+        }
       }
-      const binary = atob(raw);
-      const len = binary.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type });
-      const audioUrl = URL.createObjectURL(blob);
+
       const audio = new Audio(audioUrl);
       audio.volume = 1.0;
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => console.error("Playback error:", err));
+        playPromise.catch((err) => console.error("playAudioData error:", err));
       }
       const cleanup = () => {
         try {
           audio.pause();
           audio.src = '';
-          URL.revokeObjectURL(audioUrl);
+          if (shouldRevoke) URL.revokeObjectURL(audioUrl);
         } catch (e) {}
         if (onEnded) onEnded();
       };
