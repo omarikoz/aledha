@@ -160,16 +160,28 @@ export default function App() {
     }
   };
 
-  // Recorder Submit
-  const handleSubmitRecording = useCallback((recordingData) => {
+  // Recorder Submit (Base64 audio broadcast pipeline)
+  const handleSubmitRecording = useCallback((payload) => {
     if (!room?.id) return;
-    if (recordingData.recordedAudioUrl) {
-      setLocalRecordedAudioUrl(recordingData.recordedAudioUrl);
+    const audioData = payload?.audioData || payload?.audioDataUrl || payload?.recordedAudioUrl;
+    if (audioData) {
+      setLocalRecordedAudioUrl(audioData);
     }
+    const dataPayload = {
+      roomId: room.id,
+      audioData,
+      audioDataUrl: audioData,
+      recordedAudioUrl: audioData,
+      mimeType: payload?.mimeType || 'audio/webm',
+      aiScore: payload?.aiScore,
+      aiDetails: payload?.aiDetails,
+      recordingData: payload
+    };
+
     if (peerNetwork.roomId) {
-      peerNetwork.submitRecording(recordingData);
+      peerNetwork.submitRecording(dataPayload);
     } else {
-      socket.emit('submit_recording', { roomId: room.id, recordingData });
+      socket.emit('submit_recording', dataPayload);
     }
   }, [room?.id]);
 
@@ -260,6 +272,7 @@ export default function App() {
           <Recorder
             sound={room.roundSound}
             player={player}
+            room={room}
             onSubmitRecording={handleSubmitRecording}
           />
         ) : room.state === 'PROCESSING' ? (

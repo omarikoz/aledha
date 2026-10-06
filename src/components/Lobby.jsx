@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Crown, Play, Settings, Copy, Check } from 'lucide-react';
+import { Users, Crown, Play, Settings, Copy, Check, Bot } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
 
@@ -270,6 +270,75 @@ export default function Lobby({
           <span className="text-[11px] text-cyan-300 font-bold">
             {copied ? '✓ Code copied to clipboard!' : 'Give this code to friends on their phones!'}
           </span>
+        </div>
+
+        {/* Match Settings: Game Mode Selection */}
+        <div className="bg-slate-900/80 border-2 border-black rounded-2xl p-3 shadow-[2px_2px_0px_#000]">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Bot size={16} className="text-amber-400" />
+              <span className="text-xs font-black text-white">Game Mode</span>
+            </div>
+            <span className="text-[11px] text-slate-400 font-bold">
+              {isHost ? 'Host selects mode' : room.settings?.gameMode === 'ai' ? 'AI Auto-Vote' : 'Player Vote'}
+            </span>
+          </div>
+
+          {isHost ? (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  soundSynthesizer.playUiSound('click');
+                  onUpdateSettings({ gameMode: 'player' });
+                }}
+                className={`py-2 px-2.5 rounded-xl font-black text-xs sm:text-sm border-2 border-black transition shadow-[2px_2px_0px_#000] flex items-center justify-center gap-1.5 ${
+                  (room.settings?.gameMode || 'player') === 'player'
+                    ? 'bg-amber-400 text-black border-black'
+                    : 'bg-slate-800 text-white hover:bg-slate-700'
+                }`}
+              >
+                <Users size={15} />
+                <span>👥 Player Vote</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  soundSynthesizer.playUiSound('click');
+                  onUpdateSettings({ gameMode: 'ai' });
+                }}
+                className={`py-2 px-2.5 rounded-xl font-black text-xs sm:text-sm border-2 border-black transition shadow-[2px_2px_0px_#000] flex items-center justify-center gap-1.5 ${
+                  room.settings?.gameMode === 'ai'
+                    ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-black border-black'
+                    : 'bg-slate-800 text-white hover:bg-slate-700'
+                }`}
+              >
+                <Bot size={15} />
+                <span>🤖 AI Auto-Vote</span>
+              </button>
+            </div>
+          ) : (
+            <div className="bg-slate-950 border border-white/10 rounded-xl py-2 px-3 text-center font-black text-amber-300 text-xs sm:text-sm flex items-center justify-center gap-2">
+              {room.settings?.gameMode === 'ai' ? (
+                <>
+                  <span className="text-cyan-400">🤖 AI Auto-Vote Mode</span>
+                  <span className="text-[10px] text-slate-400 font-normal">(Audio Engine Scoring)</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-amber-400">👥 Player Vote Mode</span>
+                  <span className="text-[10px] text-slate-400 font-normal">(10s Voting Slider)</span>
+                </>
+              )}
+            </div>
+          )}
+
+          <p className="text-[10px] text-slate-400 mt-2 px-1">
+            {room.settings?.gameMode === 'ai'
+              ? '🤖 AI mode algorithmically analyzes timing, rhythm & pitch accuracy against the sound clip.'
+              : '👥 Players manually rate each other from 1 to 100 with a 10s voting countdown window.'}
+          </p>
         </div>
 
         {/* Match Settings: Rounds Selection */}

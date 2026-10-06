@@ -129,7 +129,7 @@ function startRound(room) {
   });
 }
 
-// Finish collecting recordings & begin peer voting
+// Finish collecting recordings & begin peer voting or AI evaluation
 function completeRoundRecordings(room) {
   if (room.state === 'REVEAL' || room.state === 'LEADERBOARD' || room.state === 'GAME_OVER') return;
   if (room.timerInterval) clearInterval(room.timerInterval);
@@ -143,8 +143,12 @@ function completeRoundRecordings(room) {
         playerName: player.name,
         avatar: player.avatar || '🎤',
         character: null,
-        recordedAudioUrl: null,
+        audioData: null,
         audioDataUrl: null,
+        recordedAudioUrl: null,
+        mimeType: 'audio/webm',
+        aiScore: 0,
+        aiDetails: { timingMatch: 0, toneMatch: 0, rhythmScore: 0, durationScore: 0, spectralScore: 0 },
         votes: {},
         score: null
       });
@@ -162,7 +166,7 @@ function completeRoundRecordings(room) {
   startContestantVoting(room, 0);
 }
 
-// Start peer voting for contestant at given index
+// Start peer voting or AI evaluation for contestant at given index
 function startContestantVoting(room, index) {
   if (room.revealTimer) clearTimeout(room.revealTimer);
   if (room.timerInterval) clearInterval(room.timerInterval);
@@ -174,40 +178,57 @@ function startContestantVoting(room, index) {
     return;
   }
 
-  // Step 1: Announce and play contestant take (2.5s)
+  const isAiMode = room.settings?.gameMode === 'ai';
+
+  // Step 1: Announce and play contestant take simultaneously to ALL players (3s)
   room.revealPhase = 'PLAYING';
   room.timer = 0;
   broadcastRoom(room.id);
 
   runCountdown(room, 3, null, () => {
-    // Step 2: Strict 5-Second Voting Window with Visible Countdown!
-    room.revealPhase = 'VOTING';
-    runCountdown(room, 5, null, () => {
+    if (isAiMode) {
+      // In "AI Auto-Vote" Mode: Skip manual slider, reveal deterministic AI score
+      if (currentRec.aiScore !== null && currentRec.aiScore !== undefined) {
+        currentRec.score = currentRec.aiScore;
+      } else if (currentRec.score === null) {
+        currentRec.score = 50;
+      }
       revealContestantResult(room);
-    });
+    } else {
+      // Step 2: Strict 10-Second Voting Window with Visible Countdown!
+      room.revealPhase = 'VOTING';
+      runCountdown(room, 10, null, () => {
+        revealContestantResult(room);
+      });
+    }
   });
 }
 
-// Calculate average voted score and reveal to everyone
+// Calculate voted/AI score and reveal to everyone
 function revealContestantResult(room) {
   if (room.revealTimer) clearTimeout(room.revealTimer);
   if (room.timerInterval) clearInterval(room.timerInterval);
 
+  const isAiMode = room.settings?.gameMode === 'ai';
   const currentRec = room.recordings[room.revealIndex];
   if (currentRec) {
-    const voteValues = Object.values(currentRec.votes || {});
-    const avgScore = voteValues.length > 0
-      ? Math.round(voteValues.reduce((sum, v) => sum + v, 0) / voteValues.length)
-      : 50;
-    currentRec.score = avgScore;
+    if (isAiMode) {
+      currentRec.score = (currentRec.aiScore !== null && currentRec.aiScore !== undefined) ? currentRec.aiScore : 50;
+    } else {
+      const voteValues = Object.values(currentRec.votes || {});
+      const avgScore = voteValues.length > 0
+        ? Math.round(voteValues.reduce((sum, v) => sum + v, 0) / voteValues.length)
+        : 50;
+      currentRec.score = avgScore;
+    }
   }
 
   room.revealPhase = 'RESULT';
   room.timer = 0;
   broadcastRoom(room.id);
 
-  // 3 seconds to view the average score result before moving forward
-  runCountdown(room, 3, null, () => {
+  // 4 seconds to view the score breakdown result before moving forward
+  runCountdown(room, 4, null, () => {
     if (room.revealIndex + 1 < room.recordings.length) {
       startContestantVoting(room, room.revealIndex + 1);
     } else {
@@ -279,7 +300,8 @@ io.on('connection', (socket) => {
       settings: {
         rounds: settings?.rounds || 3,
         duration: settings?.duration || 3.5,
-        category: settings?.category || 'all'
+        category: settings?.category || 'all',
+        gameMode: settings?.gameMode || 'player'
       },
       currentRound: 1,
       roundSound: null,
@@ -388,24 +410,34 @@ io.on('connection', (socket) => {
     startRound(room);
   });
 
-  // Submit Player Recording
-  socket.on('submit_recording', ({ roomId, recordingData }) => {
+  // Submit Player Recording (Base64 audio broadcast pipeline)
+  socket.on('submit_recording', (payload) => {
+    const roomId = payload?.roomId;
     const room = rooms.get(roomId);
     if (!room || (room.state !== 'RECORDING' && room.state !== 'PROCESSING')) return;
 
     const player = room.players.get(socket.id);
     if (!player) return;
 
-    const audioUrl = recordingData?.recordedAudioUrl || recordingData?.audioDataUrl || null;
-    player.recordedAudioUrl = audioUrl;
+    const audioData = payload?.audioData || payload?.recordingData?.audioData || payload?.recordingData?.audioDataUrl || payload?.recordingData?.recordedAudioUrl || null;
+    const mimeType = payload?.mimeType || payload?.recordingData?.mimeType || 'audio/webm';
+    const aiScore = payload?.aiScore ?? payload?.recordingData?.aiScore ?? null;
+    const aiDetails = payload?.aiDetails || payload?.recordingData?.aiDetails || null;
+
+    player.recordedAudioUrl = audioData;
+    player.audioData = audioData;
 
     const recEntry = {
       playerId: socket.id,
       playerName: player.name,
       avatar: player.avatar,
       character: player.character || null,
-      recordedAudioUrl: audioUrl,
-      audioDataUrl: audioUrl,
+      audioData: audioData,
+      audioDataUrl: audioData,
+      recordedAudioUrl: audioData,
+      mimeType: mimeType,
+      aiScore: aiScore,
+      aiDetails: aiDetails,
       votes: {},
       score: null
     };
@@ -427,7 +459,7 @@ io.on('connection', (socket) => {
   // Submit Peer Vote (1 to 100)
   socket.on('submit_vote', ({ roomId, score }) => {
     const room = rooms.get(roomId);
-    if (!room || room.state !== 'REVEAL' || room.revealPhase !== 'VOTING') return;
+    if (!room || room.state !== 'REVEAL' || room.revealPhase !== 'VOTING' || room.settings?.gameMode === 'ai') return;
 
     const currentRec = room.recordings[room.revealIndex];
     if (!currentRec) return;
@@ -439,7 +471,7 @@ io.on('connection', (socket) => {
     currentRec.votes = currentRec.votes || {};
     currentRec.votes[socket.id] = cleanScore;
 
-    // Check if all other players have voted
+    // Check if all other eligible players have voted
     const eligibleVoters = Array.from(room.players.values()).filter(p => p.id !== currentRec.playerId);
     if (Object.keys(currentRec.votes).length >= eligibleVoters.length) {
       revealContestantResult(room);

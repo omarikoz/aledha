@@ -115,7 +115,8 @@ class PeerNetwork {
       revealPhase: 'VOTING',
       settings: {
         rounds: settings?.rounds || 3,
-        category: settings?.category || 'all'
+        category: settings?.category || 'all',
+        gameMode: settings?.gameMode || 'player'
       },
       currentRound: 1,
       totalRounds: settings?.rounds || 3,
@@ -363,6 +364,16 @@ class PeerNetwork {
     }
   }
 
+  // Update Match Settings (Rounds, Game Mode)
+  updateSettings(settings) {
+    if (!this.isHost || !this.room) return;
+    this.room.settings = { ...this.room.settings, ...settings };
+    if (settings.rounds) {
+      this.room.totalRounds = settings.rounds;
+    }
+    this.notifyRoomUpdate();
+  }
+
   // Host starts the game - Strict Minimum 2 Players!
   startGame() {
     if (!this.isHost || !this.room) return;
@@ -449,16 +460,25 @@ class PeerNetwork {
     const player = this.room.players.find(p => p.id === playerId);
     if (!player) return;
 
-    const audioUrl = recordingData?.recordedAudioUrl || recordingData?.audioDataUrl || null;
-    player.recordedAudioUrl = audioUrl;
+    const audioData = recordingData?.audioData || recordingData?.audioDataUrl || recordingData?.recordedAudioUrl || null;
+    const mimeType = recordingData?.mimeType || 'audio/webm';
+    const aiScore = recordingData?.aiScore ?? null;
+    const aiDetails = recordingData?.aiDetails || null;
+
+    player.recordedAudioUrl = audioData;
+    player.audioData = audioData;
 
     const recEntry = {
       playerId,
       playerName: player.name,
       avatar: player.avatar,
       character: player.character || null,
-      recordedAudioUrl: audioUrl,
-      audioDataUrl: audioUrl,
+      audioData,
+      audioDataUrl: audioData,
+      recordedAudioUrl: audioData,
+      mimeType,
+      aiScore,
+      aiDetails,
       votes: {},
       score: null
     };
@@ -492,8 +512,12 @@ class PeerNetwork {
           playerName: player.name,
           avatar: player.avatar,
           character: player.character || null,
-          recordedAudioUrl: null,
+          audioData: null,
           audioDataUrl: null,
+          recordedAudioUrl: null,
+          mimeType: 'audio/webm',
+          aiScore: 0,
+          aiDetails: { timingMatch: 0, toneMatch: 0, rhythmScore: 0, durationScore: 0, spectralScore: 0 },
           votes: {},
           score: null
         });
@@ -519,38 +543,55 @@ class PeerNetwork {
       return;
     }
 
-    // Step 1: Announce and play contestant take (2.5s)
+    const isAiMode = this.room.settings?.gameMode === 'ai';
+
+    // Step 1: Announce and play contestant take simultaneously to ALL players (3s)
     this.room.revealPhase = 'PLAYING';
     this.room.timer = 0;
     this.notifyRoomUpdate();
 
     this.runCountdown(3, null, () => {
-      // Step 2: Strict 5-Second Voting Window with Visible Countdown
-      this.room.revealPhase = 'VOTING';
-      this.runCountdown(5, null, () => {
+      if (isAiMode) {
+        // In "AI Auto-Vote" Mode: Skip manual slider, reveal deterministic AI score
+        if (currentRec.aiScore !== null && currentRec.aiScore !== undefined) {
+          currentRec.score = currentRec.aiScore;
+        } else if (currentRec.score === null) {
+          currentRec.score = 50;
+        }
         this.revealContestantResult();
-      });
+      } else {
+        // Step 2: Strict 10-Second Voting Window with Visible Countdown
+        this.room.revealPhase = 'VOTING';
+        this.runCountdown(10, null, () => {
+          this.revealContestantResult();
+        });
+      }
     });
   }
 
   revealContestantResult() {
     if (this.timerInterval) clearInterval(this.timerInterval);
 
+    const isAiMode = this.room.settings?.gameMode === 'ai';
     const currentRec = this.room.recordings[this.room.revealIndex];
     if (currentRec) {
-      const voteValues = Object.values(currentRec.votes || {});
-      const avgScore = voteValues.length > 0
-        ? Math.round(voteValues.reduce((sum, v) => sum + v, 0) / voteValues.length)
-        : 50;
-      currentRec.score = avgScore;
+      if (isAiMode) {
+        currentRec.score = (currentRec.aiScore !== null && currentRec.aiScore !== undefined) ? currentRec.aiScore : 50;
+      } else {
+        const voteValues = Object.values(currentRec.votes || {});
+        const avgScore = voteValues.length > 0
+          ? Math.round(voteValues.reduce((sum, v) => sum + v, 0) / voteValues.length)
+          : 50;
+        currentRec.score = avgScore;
+      }
     }
 
     this.room.revealPhase = 'RESULT';
     this.room.timer = 0;
     this.notifyRoomUpdate();
 
-    // 3 seconds to view the average score result before moving forward
-    this.runCountdown(3, null, () => {
+    // 4 seconds to view the score breakdown result before moving forward
+    this.runCountdown(4, null, () => {
       if (this.room.revealIndex + 1 < this.room.recordings.length) {
         this.startContestantVoting(this.room.revealIndex + 1);
       } else {
@@ -590,7 +631,7 @@ class PeerNetwork {
   }
 
   recordVote(voterId, score) {
-    if (!this.isHost || !this.room || this.room.state !== 'REVEAL' || this.room.revealPhase !== 'VOTING') return;
+    if (!this.isHost || !this.room || this.room.state !== 'REVEAL' || this.room.revealPhase !== 'VOTING' || this.room.settings?.gameMode === 'ai') return;
 
     const currentRec = this.room.recordings[this.room.revealIndex];
     if (!currentRec || currentRec.playerId === voterId) return;

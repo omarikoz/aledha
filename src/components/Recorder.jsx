@@ -3,7 +3,7 @@ import { Mic, CheckCircle2, AlertCircle } from 'lucide-react';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
-export default function Recorder({ sound, timer, player, onSubmitRecording }) {
+export default function Recorder({ sound, timer, player, room, onSubmitRecording }) {
   const [micVolume, setMicVolume] = useState(0);
   const [isCapturing, setIsCapturing] = useState(false);
   const [hasRecorded, setHasRecorded] = useState(false);
@@ -111,11 +111,32 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
         setIsCapturing(false);
         setHasRecorded(true);
 
-        // Submit audio directly to room for peer voting (no algorithmic scoring)
+        // Calculate deterministic AI score if in "AI Auto-Vote" mode
+        let aiScore = null;
+        let aiDetails = null;
+        if (room?.settings?.gameMode === 'ai' && userRec?.audioBuffer) {
+          try {
+            const refBuffer = await soundSynthesizer.getReferenceAudioBuffer(sound);
+            if (refBuffer) {
+              const analysis = audioEngine.calculateAiAccuracy(userRec.audioBuffer, refBuffer);
+              aiScore = analysis.totalScore;
+              aiDetails = analysis;
+            }
+          } catch (aiErr) {
+            console.warn('AI accuracy analysis error:', aiErr);
+          }
+        }
+
+        // Transmit Base64 audio and metadata to room so ALL players can hear it
         if (onSubmitRef.current) {
           onSubmitRef.current({
-            recordedAudioUrl: userRec.objectUrl,
-            audioDataUrl: userRec.dataUrl
+            roomId: room?.id,
+            audioData: userRec.dataUrl,
+            audioDataUrl: userRec.dataUrl,
+            recordedAudioUrl: userRec.dataUrl,
+            mimeType: userRec.blob?.type || 'audio/webm',
+            aiScore,
+            aiDetails
           });
         }
       } catch (err) {
@@ -125,8 +146,13 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
           setIsCapturing(false);
           if (onSubmitRef.current) {
             onSubmitRef.current({
+              roomId: room?.id,
+              audioData: null,
+              audioDataUrl: null,
               recordedAudioUrl: null,
-              audioDataUrl: null
+              mimeType: 'audio/webm',
+              aiScore: 0,
+              aiDetails: null
             });
           }
         }

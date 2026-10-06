@@ -374,6 +374,313 @@ class AudioEngine {
     });
   }
 
+  // Convert Base64 or Blob URL or ArrayBuffer to AudioBuffer
+  async decodeAudio(audioSource) {
+    if (!audioSource) return null;
+    if (typeof AudioBuffer !== 'undefined' && audioSource instanceof AudioBuffer) {
+      return audioSource;
+    }
+    const ctx = this.getAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
+
+    try {
+      let arrayBuf = null;
+      if (audioSource instanceof ArrayBuffer) {
+        arrayBuf = audioSource;
+      } else if (audioSource instanceof Blob) {
+        arrayBuf = await audioSource.arrayBuffer();
+      } else if (typeof audioSource === 'string') {
+        if (audioSource.startsWith('data:')) {
+          const parts = audioSource.split(',');
+          const bstr = atob(parts[1]);
+          let n = bstr.length;
+          const u8arr = new Uint8Array(n);
+          while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+          }
+          arrayBuf = u8arr.buffer;
+        } else {
+          const res = await fetch(audioSource);
+          arrayBuf = await res.arrayBuffer();
+        }
+      }
+
+      if (!arrayBuf) return null;
+      return await new Promise((resolve) => {
+        ctx.decodeAudioData(
+          arrayBuf.slice(0),
+          (buf) => resolve(buf),
+          (err) => {
+            console.warn('decodeAudio error:', err);
+            resolve(null);
+          }
+        );
+      });
+    } catch (e) {
+      console.warn('decodeAudio exception:', e);
+      return null;
+    }
+  }
+
+  // Pure Deterministic Audio Accuracy Evaluation (NO Random Fallbacks)
+  // Compares player's decoded AudioBuffer against reference sound's AudioBuffer
+  calculateAiAccuracy(playerBuffer, refBuffer) {
+    if (!playerBuffer || !refBuffer) {
+      return {
+        totalScore: 0,
+        timingMatch: 0,
+        toneMatch: 0,
+        rhythmScore: 0,
+        durationScore: 0,
+        spectralScore: 0
+      };
+    }
+
+    const pData = playerBuffer.getChannelData(0);
+    const rData = refBuffer.getChannelData(0);
+    const pSampleRate = playerBuffer.sampleRate || 44100;
+    const rSampleRate = refBuffer.sampleRate || 44100;
+
+    // 50ms Slices
+    const pSliceSize = Math.max(1, Math.floor(pSampleRate * 0.05));
+    const rSliceSize = Math.max(1, Math.floor(rSampleRate * 0.05));
+
+    const pNumSlices = Math.floor(pData.length / pSliceSize);
+    const rNumSlices = Math.floor(rData.length / rSliceSize);
+
+    if (pNumSlices === 0 || rNumSlices === 0) {
+      return {
+        totalScore: 0,
+        timingMatch: 0,
+        toneMatch: 0,
+        rhythmScore: 0,
+        durationScore: 0,
+        spectralScore: 0
+      };
+    }
+
+    // 1. Compute RMS in 50ms slices for both audios
+    const pRms = new Float32Array(pNumSlices);
+    let pPeakRms = 0;
+    let pActiveCount = 0;
+    for (let i = 0; i < pNumSlices; i++) {
+      let sum = 0;
+      const start = i * pSliceSize;
+      for (let j = 0; j < pSliceSize; j++) {
+        const val = pData[start + j];
+        sum += val * val;
+      }
+      const rms = Math.sqrt(sum / pSliceSize);
+      pRms[i] = rms;
+      if (rms > pPeakRms) pPeakRms = rms;
+      if (rms >= 0.02) pActiveCount++;
+    }
+
+    // Strict Silence Check: If peak RMS is below 0.02, score = 0%
+    if (pPeakRms < 0.02 || pActiveCount === 0) {
+      return {
+        totalScore: 0,
+        timingMatch: 0,
+        toneMatch: 0,
+        rhythmScore: 0,
+        durationScore: 0,
+        spectralScore: 0
+      };
+    }
+
+    const rRms = new Float32Array(rNumSlices);
+    let rPeakRms = 0;
+    let rActiveCount = 0;
+    for (let i = 0; i < rNumSlices; i++) {
+      let sum = 0;
+      const start = i * rSliceSize;
+      for (let j = 0; j < rSliceSize; j++) {
+        const val = rData[start + j];
+        sum += val * val;
+      }
+      const rms = Math.sqrt(sum / rSliceSize);
+      rRms[i] = rms;
+      if (rms > rPeakRms) rPeakRms = rms;
+      if (rms >= 0.02) rActiveCount++;
+    }
+
+    // Normalize RMS envelopes
+    const pNorm = new Float32Array(pNumSlices);
+    for (let i = 0; i < pNumSlices; i++) {
+      pNorm[i] = pPeakRms > 0 ? pRms[i] / pPeakRms : 0;
+    }
+    const rNorm = new Float32Array(rNumSlices);
+    for (let i = 0; i < rNumSlices; i++) {
+      rNorm[i] = rPeakRms > 0 ? rRms[i] / rPeakRms : 0;
+    }
+
+    // Helper: Resample array to common length
+    const resampleArray = (arr, targetLen) => {
+      const out = new Float32Array(targetLen);
+      if (arr.length === 0) return out;
+      if (arr.length === 1) {
+        out.fill(arr[0]);
+        return out;
+      }
+      for (let i = 0; i < targetLen; i++) {
+        const t = (i / (targetLen - 1)) * (arr.length - 1);
+        const low = Math.floor(t);
+        const high = Math.min(arr.length - 1, low + 1);
+        const frac = t - low;
+        out[i] = arr[low] * (1 - frac) + arr[high] * frac;
+      }
+      return out;
+    };
+
+    const numBins = 64;
+    const pEnv = resampleArray(pNorm, numBins);
+    const rEnv = resampleArray(rNorm, numBins);
+
+    // 1. Energy Envelope & Rhythm Match (50% weight):
+    // Normalized correlation and Euclidean envelope similarity
+    let dot = 0, pMag = 0, rMag = 0, sumDiff = 0;
+    for (let i = 0; i < numBins; i++) {
+      dot += pEnv[i] * rEnv[i];
+      pMag += pEnv[i] * pEnv[i];
+      rMag += rEnv[i] * rEnv[i];
+      sumDiff += Math.abs(pEnv[i] - rEnv[i]);
+    }
+    const cosineSim = (pMag > 0 && rMag > 0) ? (dot / (Math.sqrt(pMag) * Math.sqrt(rMag))) : 0;
+    const meanAbsDiff = sumDiff / numBins;
+    const euclideanSim = Math.max(0, 1 - meanAbsDiff * 1.5);
+    const rhythmScore = Math.max(0, Math.min(1.0, cosineSim * 0.6 + euclideanSim * 0.4));
+
+    // 2. Duration & Silence Ratio (25% weight):
+    // Penalize recordings where sound wasn't produced or silence dominates compared to target clip
+    const pSilenceRatio = 1 - (pActiveCount / Math.max(1, pNumSlices));
+    const rSilenceRatio = 1 - (rActiveCount / Math.max(1, rNumSlices));
+    const silenceDiff = Math.abs(pSilenceRatio - rSilenceRatio);
+    const silenceScore = Math.max(0, 1 - silenceDiff * 2.0);
+
+    const pDuration = playerBuffer.duration;
+    const rDuration = refBuffer.duration;
+    const durRatio = Math.min(pDuration, rDuration) / Math.max(pDuration, rDuration, 0.1);
+    const durScore = Math.max(0, durRatio);
+    const durationScore = Math.max(0, Math.min(1.0, silenceScore * 0.6 + durScore * 0.4));
+
+    // 3. Spectral Centroid / Frequency Tone Match (25% weight):
+    // Pure Radix-2 Cooley-Tukey FFT spectral centroid implementation
+    const pAvgCentroid = this._computeAverageSpectralCentroid(pData, pRms, pSliceSize, pSampleRate);
+    const rAvgCentroid = this._computeAverageSpectralCentroid(rData, rRms, rSliceSize, rSampleRate);
+
+    let spectralScore = 0.5; // neutral baseline if unpitched
+    if (pAvgCentroid > 0 && rAvgCentroid > 0) {
+      const octaveDiff = Math.abs(Math.log2(pAvgCentroid / rAvgCentroid));
+      spectralScore = Math.max(0, Math.min(1.0, 1 - octaveDiff * 0.5));
+    }
+
+    // Final Deterministic 0-100 Score Formula:
+    // Final Score = Math.round((rhythmScore * 0.5 + durationScore * 0.25 + spectralScore * 0.25) * 100)
+    const rawScore = (rhythmScore * 0.5) + (durationScore * 0.25) + (spectralScore * 0.25);
+    const finalScore = Math.max(0, Math.min(100, Math.round(rawScore * 100)));
+
+    const timingMatch = Math.max(0, Math.min(100, Math.round((rhythmScore * 0.65 + durationScore * 0.35) * 100)));
+    const toneMatch = Math.max(0, Math.min(100, Math.round(spectralScore * 100)));
+
+    return {
+      totalScore: finalScore,
+      timingMatch,
+      toneMatch,
+      rhythmScore: Math.round(rhythmScore * 100),
+      durationScore: Math.round(durationScore * 100),
+      spectralScore: Math.round(spectralScore * 100)
+    };
+  }
+
+  // Fast offline spectral centroid over active frames
+  _computeAverageSpectralCentroid(samples, rmsArray, sliceSize, sampleRate) {
+    const fftSize = 512;
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+    let centroidSum = 0;
+    let count = 0;
+
+    for (let s = 0; s < rmsArray.length; s++) {
+      if (rmsArray[s] < 0.02) continue;
+      const startIdx = s * sliceSize;
+      if (startIdx + fftSize > samples.length) break;
+
+      // Hann window
+      for (let i = 0; i < fftSize; i++) {
+        const val = samples[startIdx + i] || 0;
+        const w = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (fftSize - 1)));
+        real[i] = val * w;
+        imag[i] = 0;
+      }
+
+      this._radix2Fft(real, imag);
+
+      const numBins = fftSize / 2;
+      const binWidth = sampleRate / fftSize;
+      let weightedSum = 0;
+      let totalMag = 0;
+
+      for (let k = 1; k < numBins; k++) {
+        const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+        weightedSum += (k * binWidth) * mag;
+        totalMag += mag;
+      }
+
+      if (totalMag > 1e-5) {
+        centroidSum += (weightedSum / totalMag);
+        count++;
+      }
+    }
+
+    return count > 0 ? (centroidSum / count) : 0;
+  }
+
+  _radix2Fft(real, imag) {
+    const n = real.length;
+    let j = 0;
+    for (let i = 0; i < n - 1; i++) {
+      if (i < j) {
+        const tr = real[i]; real[i] = real[j]; real[j] = tr;
+        const ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
+      }
+      let k = n >> 1;
+      while (k <= j) {
+        j -= k;
+        k >>= 1;
+      }
+      j += k;
+    }
+
+    for (let len = 2; len <= n; len <<= 1) {
+      const half = len >> 1;
+      const angle = (-2 * Math.PI) / len;
+      const wStepR = Math.cos(angle);
+      const wStepI = Math.sin(angle);
+
+      for (let i = 0; i < n; i += len) {
+        let wr = 1;
+        let wi = 0;
+        for (let k = 0; k < half; k++) {
+          const uR = real[i + k];
+          const uI = imag[i + k];
+          const vR = real[i + k + half] * wr - imag[i + k + half] * wi;
+          const vI = real[i + k + half] * wi + imag[i + k + half] * wr;
+
+          real[i + k] = uR + vR;
+          imag[i + k] = uI + vI;
+          real[i + k + half] = uR - vR;
+          imag[i + k + half] = uI - vI;
+
+          const nextWr = wr * wStepR - wi * wStepI;
+          wi = wr * wStepI + wi * wStepR;
+          wr = nextWr;
+        }
+      }
+    }
+  }
+
   // Hard release only when leaving the page entirely
   releaseMicHard() {
     if (this.micStream) {
