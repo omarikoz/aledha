@@ -196,14 +196,14 @@ export default function SoundPackModal({
                     key={pack.id}
                     onClick={() => {
                       if (!isHost) return;
-                      if (!isUnlocked) {
+                      if (pack.requiresPin) {
                         handleOpenPinPrompt(pack);
                       } else {
                         handleDirectSelect(pack.id);
                       }
                     }}
                     className={`p-3.5 sm:p-4 rounded-2xl border-2 transition relative ${
-                      isHost ? 'cursor-pointer' : ''
+                      isHost ? 'cursor-pointer hover:border-amber-400' : ''
                     } ${
                       isSelected
                         ? 'bg-gradient-to-r from-amber-500/25 via-slate-900 to-amber-500/10 border-amber-400 shadow-[3px_3px_0px_#000]'
@@ -224,22 +224,16 @@ export default function SoundPackModal({
                             </span>
 
                             {pack.requiresPin && (
-                              <span
-                                className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                                  isUnlocked
-                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                    : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
-                                }`}
-                              >
-                                {isUnlocked ? <Unlock size={10} /> : <Lock size={10} />}
-                                <span>{isUnlocked ? 'Unlocked' : 'PIN Locked'}</span>
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border bg-amber-500/20 text-amber-300 border-amber-400/40">
+                                <Lock size={10} />
+                                <span>PIN Required</span>
                               </span>
                             )}
                           </div>
 
                           <h3 className="text-base sm:text-lg font-black text-white mt-1 flex items-center gap-1.5">
                             <span>{pack.name}</span>
-                            {!isUnlocked && <Lock size={14} className="text-amber-400 inline" />}
+                            {pack.requiresPin && <Lock size={14} className="text-amber-400 inline" />}
                           </h3>
 
                           <p className="text-xs text-slate-300 mt-0.5 line-clamp-2">
@@ -256,18 +250,26 @@ export default function SoundPackModal({
                       {/* Right Action */}
                       <div className="shrink-0 pt-1" onClick={(e) => e.stopPropagation()}>
                         {isSelected ? (
-                          <div className="inline-flex items-center gap-1 bg-amber-400 text-black px-3 py-1.5 rounded-xl font-black text-xs border border-black shadow-[1px_1px_0px_#000]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isHost && pack.requiresPin) {
+                                handleOpenPinPrompt(pack);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 bg-amber-400 text-black px-3 py-1.5 rounded-xl font-black text-xs border border-black shadow-[1px_1px_0px_#000]"
+                          >
                             <Check size={14} />
                             <span>Active</span>
-                          </div>
-                        ) : !isUnlocked ? (
+                          </button>
+                        ) : pack.requiresPin ? (
                           <button
                             type="button"
                             onClick={() => handleOpenPinPrompt(pack)}
                             className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-[2px_2px_0px_#000]"
                           >
                             <Lock size={13} />
-                            <span>Unlock</span>
+                            <span>Enter PIN</span>
                           </button>
                         ) : isHost ? (
                           <button

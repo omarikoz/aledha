@@ -31,7 +31,10 @@ export default function App() {
     const next = audioEngine.toggleMute();
     setIsMuted(next);
     voiceChat.setEmergencyMute(next);
-  }, []);
+    if (room?.id && socket.connected) {
+      socket.emit('player_toggle_mute', { roomId: room.id, isMuted: next });
+    }
+  }, [room?.id]);
 
   // Function to request microphone permission explicitly and unlock audio context
   const handleRequestMic = async () => {
@@ -140,6 +143,26 @@ export default function App() {
     socket.on('play_player_reveal', handleUniversalAudioReveal);
     socket.on('reveal_player_recording', handleUniversalAudioReveal);
 
+    // Player Mute State Updates
+    socket.on('player_mute_updated', ({ playerId, isMuted }) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        const updatedPlayers = (prev.players || []).map((p) => {
+          if (p.id === playerId) {
+            return { ...p, isMuted: !!isMuted };
+          }
+          return p;
+        });
+        return { ...prev, players: updatedPlayers };
+      });
+      setPlayer((prev) => {
+        if (prev && prev.id === playerId) {
+          return { ...prev, isMuted: !!isMuted };
+        }
+        return prev;
+      });
+    });
+
     socket.on('game_aborted', (data) => {
       if (!peerNetwork.roomId) {
         setRoom((prev) =>
@@ -161,6 +184,7 @@ export default function App() {
       socket.off('phase_change');
       socket.off('play_player_reveal', handleUniversalAudioReveal);
       socket.off('reveal_player_recording', handleUniversalAudioReveal);
+      socket.off('player_mute_updated');
       socket.off('game_aborted');
     };
   }, []);

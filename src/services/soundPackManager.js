@@ -1,37 +1,15 @@
 import soundPacksData from '../data/soundPacks.json';
 
-const UNLOCKED_PACKS_KEY = 'aledha_unlocked_packs_v1';
-
 class SoundPackManager {
   constructor() {
     this.packs = soundPacksData;
-    this.unlockedPacks = this.loadUnlockedPacks();
   }
 
-  loadUnlockedPacks() {
-    try {
-      const stored = localStorage.getItem(UNLOCKED_PACKS_KEY);
-      if (stored) {
-        return new Set(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.warn('Could not load unlocked packs from storage:', e);
-    }
-    return new Set();
-  }
-
-  saveUnlockedPacks() {
-    try {
-      localStorage.setItem(UNLOCKED_PACKS_KEY, JSON.stringify(Array.from(this.unlockedPacks)));
-    } catch (e) {
-      console.warn('Could not save unlocked packs to storage:', e);
-    }
-  }
-
+  // Never persist unlocked state - PIN must be re-verified on every selection
   getAllPacks() {
     return this.packs.map((p) => ({
       ...p,
-      isUnlocked: !p.requiresPin || this.unlockedPacks.has(p.id)
+      isUnlocked: !p.requiresPin
     }));
   }
 
@@ -41,31 +19,27 @@ class SoundPackManager {
     if (!pack) return null;
     return {
       ...pack,
-      isUnlocked: !pack.requiresPin || this.unlockedPacks.has(pack.id)
+      isUnlocked: !pack.requiresPin
     };
   }
 
   isPackUnlocked(packId) {
     const pack = this.packs.find((p) => p.id === packId);
     if (!pack) return true;
-    if (!pack.requiresPin) return true;
-    return this.unlockedPacks.has(packId);
+    return !pack.requiresPin;
   }
 
+  // Verify PIN on demand without keeping permanent client unlock
   unlockPack(packId, pinCode) {
     const pack = this.packs.find((p) => p.id === packId);
     if (!pack) return { success: false, error: 'Sound pack not found.' };
 
     if (!pack.requiresPin) {
-      this.unlockedPacks.add(packId);
-      this.saveUnlockedPacks();
-      return { success: true };
+      return { success: true, pack };
     }
 
     const cleanInput = String(pinCode || '').trim();
     if (cleanInput === String(pack.pinCode).trim()) {
-      this.unlockedPacks.add(packId);
-      this.saveUnlockedPacks();
       return { success: true, pack };
     }
 

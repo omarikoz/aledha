@@ -512,6 +512,16 @@ export default function Lobby({
                         You
                       </span>
                     )}
+                    {p.isMuted ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-red-600/25 text-red-400 border border-red-500/40">
+                        <span>🔇</span>
+                        <span>Muted</span>
+                      </span>
+                    ) : (
+                      <span title="Mic Active" className="text-xs text-emerald-400">
+                        🎙️
+                      </span>
+                    )}
                   </div>
 
                   <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[11px] font-black border border-emerald-500/40">

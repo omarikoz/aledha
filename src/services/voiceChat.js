@@ -4,8 +4,7 @@ import { audioEngine } from './audioEngine.js';
 const RTC_CONFIG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' }
   ]
 };
 
@@ -13,8 +12,9 @@ class VoiceChatService {
   constructor() {
     this.roomId = null;
     this.localStream = null;
-    this.peers = new Map(); // remotePeerId -> RTCPeerConnection
-    this.audioElements = new Map(); // remotePeerId -> HTMLAudioElement
+    this.peers = new Map(); // peerId -> RTCPeerConnection
+    this.pendingCandidates = new Map(); // peerId -> RTCIceCandidate[]
+    this.audioElements = new Map(); // peerId -> HTMLAudioElement
     this.isEmergencyMuted = false;
     this.isPhaseMuted = false;
     this.currentPhase = 'LOBBY';
@@ -23,7 +23,6 @@ class VoiceChatService {
     this.socketHandlersBound = false;
   }
 
-  // Subscribe to voice chat state updates (for UI indicators)
   onStateChange(callback) {
     this.stateListeners.add(callback);
     callback(this.getState());
@@ -54,7 +53,6 @@ class VoiceChatService {
     this.roomId = roomId;
 
     try {
-      // Use existing stream from audioEngine or provided stream
       let micStream = stream || audioEngine.getMicStream();
       if (!micStream) {
         micStream = await audioEngine.initMic();
@@ -67,9 +65,10 @@ class VoiceChatService {
       }
 
       this.isConnected = true;
+      this.applyMuteStates();
       this.notifyStateChange();
 
-      // Announce entry into voice chat mesh
+      // Announce to all room members that local player is ready for voice chat
       if (socket.connected) {
         socket.emit('voice_join', { roomId: this.roomId });
       }
@@ -79,24 +78,34 @@ class VoiceChatService {
   }
 
   bindSocketEvents() {
-    // When another peer joins the room, the existing member initiates the offer
-    socket.on('voice_user_joined', async ({ peerId }) => {
+    // 1. Existing players receive alert when a new player joins the voice mesh
+    const handleNewPeerJoined = async ({ peerId }) => {
       if (!peerId || peerId === socket.id) return;
       await this.createPeerConnection(peerId, true);
-    });
+    };
 
-    // Handle incoming WebRTC signaling (offer, answer, candidate)
-    socket.on('voice_signal', async ({ fromPeerId, signal }) => {
-      if (!fromPeerId || fromPeerId === socket.id || !signal) return;
-      await this.handleIncomingSignal(fromPeerId, signal);
-    });
+    socket.on('new_peer_joined', handleNewPeerJoined);
+    socket.on('voice_user_joined', handleNewPeerJoined);
 
-    // When another peer leaves
-    socket.on('voice_user_left', ({ peerId }) => {
+    // 2. Signaling pipeline (offer, answer, candidate)
+    const handleSignalReceive = async ({ from, fromPeerId, signal }) => {
+      const senderId = from || fromPeerId;
+      if (!senderId || senderId === socket.id || !signal) return;
+      await this.handleIncomingSignal(senderId, signal);
+    };
+
+    socket.on('signal_receive', handleSignalReceive);
+    socket.on('voice_signal', handleSignalReceive);
+
+    // 3. Peer disconnection
+    const handlePeerLeft = ({ peerId }) => {
       if (!peerId) return;
       this.closePeer(peerId);
       this.notifyStateChange();
-    });
+    };
+
+    socket.on('peer_left', handlePeerLeft);
+    socket.on('voice_user_left', handlePeerLeft);
   }
 
   async createPeerConnection(remotePeerId, isInitiator = false) {
@@ -107,8 +116,9 @@ class VoiceChatService {
     try {
       const pc = new RTCPeerConnection(RTC_CONFIG);
       this.peers.set(remotePeerId, pc);
+      this.pendingCandidates.set(remotePeerId, []);
 
-      // Add local audio tracks to peer connection
+      // Add local audio tracks immediately
       const canTransmit = !this.isEmergencyMuted && !this.isPhaseMuted;
       if (this.localStream) {
         this.localStream.getAudioTracks().forEach((track) => {
@@ -121,56 +131,76 @@ class VoiceChatService {
         });
       }
 
-      // Handle ICE Candidate exchange
+      // Exchange ICE Candidates via Socket.io
       pc.onicecandidate = (event) => {
         if (event.candidate && this.roomId) {
-          socket.emit('voice_signal', {
+          const payload = {
             roomId: this.roomId,
+            to: remotePeerId,
             targetPeerId: remotePeerId,
             signal: {
-              type: 'ice-candidate',
+              type: 'candidate',
               candidate: event.candidate
             }
+          };
+          socket.emit('signal_send', payload);
+        }
+      };
+
+      // Auto-Attaching Remote Audio Streams in DOM with playsInline & autoplay
+      pc.ontrack = (event) => {
+        const stream = event.streams[0] || new MediaStream([event.track]);
+        let audioEl = document.getElementById(`audio-peer-${remotePeerId}`);
+        if (!audioEl) {
+          audioEl = document.createElement('audio');
+          audioEl.id = `audio-peer-${remotePeerId}`;
+          audioEl.autoplay = true;
+          audioEl.playsInline = true;
+          audioEl.style.display = 'none';
+          document.body.appendChild(audioEl);
+          this.audioElements.set(remotePeerId, audioEl);
+        }
+
+        audioEl.srcObject = stream;
+        audioEl.muted = this.isPhaseMuted;
+
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn('Remote peer audio autoplay blocked:', err);
           });
         }
       };
 
-      // Handle remote incoming audio track
-      pc.ontrack = (event) => {
-        const remoteStream = event.streams[0] || new MediaStream([event.track]);
-        let audioEl = this.audioElements.get(remotePeerId);
-        if (!audioEl) {
-          audioEl = new Audio();
-          audioEl.autoplay = true;
-          this.audioElements.set(remotePeerId, audioEl);
-        }
-        audioEl.srcObject = remoteStream;
-        // In critical phases (Sound/Recording), mute remote voice playback
-        audioEl.muted = this.isPhaseMuted;
-        audioEl.play().catch(() => {});
-      };
-
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        if (
+          pc.connectionState === 'disconnected' ||
+          pc.connectionState === 'failed' ||
+          pc.connectionState === 'closed'
+        ) {
           this.closePeer(remotePeerId);
           this.notifyStateChange();
         }
       };
 
+      // If initiator, generate offer and emit
       if (isInitiator) {
         const offer = await pc.createOffer({
           offerToReceiveAudio: true,
           offerToReceiveVideo: false
         });
         await pc.setLocalDescription(offer);
-        socket.emit('voice_signal', {
+
+        const payload = {
           roomId: this.roomId,
+          to: remotePeerId,
           targetPeerId: remotePeerId,
           signal: {
             type: 'offer',
             sdp: pc.localDescription
           }
-        });
+        };
+        socket.emit('signal_send', payload);
       }
 
       this.notifyStateChange();
@@ -192,33 +222,57 @@ class VoiceChatService {
         if (!pc) return;
 
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+
+        // Flush any queued ICE candidates for this peer
+        await this.flushPendingCandidates(remotePeerId, pc);
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        socket.emit('voice_signal', {
+        const payload = {
           roomId: this.roomId,
+          to: remotePeerId,
           targetPeerId: remotePeerId,
           signal: {
             type: 'answer',
             sdp: pc.localDescription
           }
-        });
+        };
+        socket.emit('signal_send', payload);
       } else if (signal.type === 'answer') {
         if (pc && pc.signalingState !== 'stable') {
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          await this.flushPendingCandidates(remotePeerId, pc);
         }
-      } else if (signal.type === 'ice-candidate') {
-        if (pc && signal.candidate) {
+      } else if (signal.type === 'candidate' && signal.candidate) {
+        if (pc && pc.remoteDescription && pc.remoteDescription.type) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
           } catch (e) {
             console.warn('addIceCandidate error:', e);
           }
+        } else {
+          // Queue ICE candidate until setRemoteDescription completes
+          const queue = this.pendingCandidates.get(remotePeerId) || [];
+          queue.push(signal.candidate);
+          this.pendingCandidates.set(remotePeerId, queue);
         }
       }
     } catch (err) {
       console.warn('handleIncomingSignal error:', err);
     }
+  }
+
+  async flushPendingCandidates(peerId, pc) {
+    const queue = this.pendingCandidates.get(peerId) || [];
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('flush candidate error:', e);
+      }
+    }
+    this.pendingCandidates.set(peerId, []);
   }
 
   closePeer(remotePeerId) {
@@ -227,19 +281,24 @@ class VoiceChatService {
       try { pc.close(); } catch (e) {}
       this.peers.delete(remotePeerId);
     }
-    const audioEl = this.audioElements.get(remotePeerId);
+    this.pendingCandidates.delete(remotePeerId);
+
+    const audioEl = this.audioElements.get(remotePeerId) || document.getElementById(`audio-peer-${remotePeerId}`);
     if (audioEl) {
       try {
         audioEl.pause();
         audioEl.srcObject = null;
+        if (audioEl.parentNode) {
+          audioEl.parentNode.removeChild(audioEl);
+        }
       } catch (e) {}
       this.audioElements.delete(remotePeerId);
     }
   }
 
   // Automatic Game Phase Muting
-  // - "SOUND" (Listen phase) -> MUTED so target sound is completely clear
-  // - "RECORDING" (Mimic phase) -> MUTED so players don't hear each other while speaking
+  // - "SOUND" (Listen phase) -> MUTED so target sound is crystal clear
+  // - "RECORDING" (Mimic phase) -> MUTED so players are isolated
   // - "LOBBY", "REVEAL" (Voting), "LEADERBOARD", "GAME_OVER" -> UNMUTED
   setGamePhase(phase) {
     this.currentPhase = phase || 'LOBBY';
@@ -270,7 +329,7 @@ class VoiceChatService {
   applyMuteStates() {
     const canTransmit = !this.isEmergencyMuted && !this.isPhaseMuted;
 
-    // 1. Control local microphone hardware tracks
+    // 1. Control local microphone tracks
     if (this.localStream) {
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = canTransmit;
@@ -288,8 +347,7 @@ class VoiceChatService {
       } catch (e) {}
     });
 
-    // 3. Control incoming remote audio playback elements
-    // When in SOUND or RECORDING phase, mute remote audio so players are isolated
+    // 3. Control remote audio elements
     this.audioElements.forEach((audioEl) => {
       try {
         audioEl.muted = this.isPhaseMuted;
@@ -297,7 +355,6 @@ class VoiceChatService {
     });
   }
 
-  // Cleanup upon leaving room
   disconnect() {
     if (this.roomId && socket.connected) {
       socket.emit('voice_leave', { roomId: this.roomId });
@@ -305,6 +362,7 @@ class VoiceChatService {
 
     this.peers.forEach((_, id) => this.closePeer(id));
     this.peers.clear();
+    this.pendingCandidates.clear();
     this.audioElements.clear();
     this.roomId = null;
     this.isConnected = false;

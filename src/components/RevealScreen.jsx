@@ -183,6 +183,18 @@ export default function RevealScreen({
                 YOU
               </span>
             )}
+            {(() => {
+              const contestantPlayer = room?.players?.find((p) => p.id === currentRec.playerId);
+              if (contestantPlayer?.isMuted) {
+                return (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-red-600/25 text-red-400 border border-red-500/40">
+                    <span>🔇</span>
+                    <span>Muted</span>
+                  </span>
+                );
+              }
+              return null;
+            })()}
           </div>
         </div>
 

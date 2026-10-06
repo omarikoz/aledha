@@ -372,7 +372,8 @@ io.on('connection', (socket) => {
       score: 0,
       lastRoundScore: 0,
       isHost: true,
-      isBot: false
+      isBot: false,
+      isMuted: false
     };
 
     newRoom.players.set(socket.id, hostPlayer);
@@ -426,7 +427,8 @@ io.on('connection', (socket) => {
       score: 0,
       lastRoundScore: 0,
       isHost: false,
-      isBot: false
+      isBot: false,
+      isMuted: false
     };
 
     room.players.set(socket.id, player);
@@ -565,22 +567,62 @@ io.on('connection', (socket) => {
     handleResetToLobby(roomId);
   });
 
-  // WebRTC Mesh Voice Chat Signaling Relay
-  socket.on('voice_join', ({ roomId }) => {
-    if (roomId) socket.to(roomId).emit('voice_user_joined', { peerId: socket.id });
+  // Player Mute State Toggle
+  socket.on('player_toggle_mute', ({ roomId, isMuted }) => {
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    if (room) {
+      const player = room.players.get(socket.id);
+      if (player) {
+        player.isMuted = !!isMuted;
+      }
+    }
+    io.to(roomId).emit('player_mute_updated', {
+      playerId: socket.id,
+      isMuted: !!isMuted
+    });
   });
 
-  socket.on('voice_signal', ({ targetPeerId, signal }) => {
-    if (targetPeerId) {
-      io.to(targetPeerId).emit('voice_signal', {
+  // WebRTC Mesh Voice Chat Signaling Relay
+  socket.on('voice_join', ({ roomId }) => {
+    if (roomId) {
+      socket.to(roomId).emit('new_peer_joined', { peerId: socket.id });
+      socket.to(roomId).emit('voice_user_joined', { peerId: socket.id });
+    }
+  });
+
+  socket.on('signal_send', ({ to, signal }) => {
+    if (to) {
+      io.to(to).emit('signal_receive', {
+        from: socket.id,
+        signal
+      });
+      io.to(to).emit('voice_signal', {
         fromPeerId: socket.id,
         signal
       });
     }
   });
 
+  socket.on('voice_signal', ({ targetPeerId, signal }) => {
+    const to = targetPeerId;
+    if (to) {
+      io.to(to).emit('voice_signal', {
+        fromPeerId: socket.id,
+        signal
+      });
+      io.to(to).emit('signal_receive', {
+        from: socket.id,
+        signal
+      });
+    }
+  });
+
   socket.on('voice_leave', ({ roomId }) => {
-    if (roomId) socket.to(roomId).emit('voice_user_left', { peerId: socket.id });
+    if (roomId) {
+      socket.to(roomId).emit('peer_left', { peerId: socket.id });
+      socket.to(roomId).emit('voice_user_left', { peerId: socket.id });
+    }
   });
 
   // Disconnect
