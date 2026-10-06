@@ -71,7 +71,8 @@ function broadcastRoom(roomId) {
     players: Array.from(room.players.values()),
     recordings: room.recordings,
     revealIndex: room.revealIndex,
-    timer: room.timer
+    timer: room.timer,
+    abortReason: room.abortReason || null
   });
 }
 
@@ -270,9 +271,8 @@ io.on('connection', (socket) => {
 
     const hostPlayer = {
       id: socket.id,
-      name: playerName || 'The Host (المعلم)',
-      avatar: avatar || character?.avatar || '👑',
-      character: character || null,
+      name: (playerName || '').trim() || 'Host',
+      avatar: '🎤',
       recordedAudioUrl: null,
       score: 0,
       lastRoundScore: 0,
@@ -290,7 +290,7 @@ io.on('connection', (socket) => {
   });
 
   // Join Room
-  socket.on('join_room', ({ roomId, playerName, avatar, character }, callback) => {
+  socket.on('join_room', ({ roomId, playerName }, callback) => {
     const code = (roomId || '').trim().toUpperCase();
     const room = rooms.get(code);
 
@@ -306,9 +306,8 @@ io.on('connection', (socket) => {
 
     const player = {
       id: socket.id,
-      name: playerName || `Player ${room.players.size + 1}`,
-      avatar: avatar || character?.avatar || '🛺',
-      character: character || null,
+      name: (playerName || '').trim() || `Player ${room.players.size + 1}`,
+      avatar: '🎤',
       recordedAudioUrl: null,
       score: 0,
       lastRoundScore: 0,
@@ -409,11 +408,14 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Play Again (Reset to Lobby)
-  socket.on('play_again', ({ roomId }) => {
+  // Play Again / Return to Lobby
+  const handleResetToLobby = (roomId) => {
     const room = rooms.get(roomId);
-    if (!room || room.hostId !== socket.id) return;
+    if (!room) return;
+    if (room.timerInterval) clearInterval(room.timerInterval);
+    if (room.revealTimer) clearTimeout(room.revealTimer);
     room.state = 'LOBBY';
+    room.abortReason = null;
     room.revealPhase = 'VOTING';
     room.currentRound = 1;
     room.recordings = [];
@@ -423,6 +425,16 @@ io.on('connection', (socket) => {
       player.lastRoundScore = 0;
     }
     broadcastRoom(roomId);
+  };
+
+  socket.on('play_again', ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room || room.hostId !== socket.id) return;
+    handleResetToLobby(roomId);
+  });
+
+  socket.on('return_to_lobby', ({ roomId }) => {
+    handleResetToLobby(roomId);
   });
 
   // Disconnect
@@ -433,10 +445,14 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
+    const disconnectedPlayer = room.players.get(socket.id);
+    const disconnectedName = disconnectedPlayer?.name || 'A player';
+
     room.players.delete(socket.id);
 
     if (room.players.size === 0) {
       if (room.timerInterval) clearInterval(room.timerInterval);
+      if (room.revealTimer) clearTimeout(room.revealTimer);
       rooms.delete(roomId);
     } else {
       if (room.hostId === socket.id) {
@@ -446,6 +462,20 @@ io.on('connection', (socket) => {
           room.hostId = nextHost.id;
         }
       }
+
+      // If active match was in progress, immediately abort session
+      if (room.state !== 'LOBBY' && room.state !== 'GAME_OVER' && room.state !== 'ABORTED') {
+        if (room.timerInterval) clearInterval(room.timerInterval);
+        if (room.revealTimer) clearTimeout(room.revealTimer);
+        room.state = 'ABORTED';
+        room.abortReason = `${disconnectedName} disconnected. The game has ended.`;
+        io.to(roomId).emit('game_aborted', {
+          reason: 'player_disconnected',
+          playerName: disconnectedName,
+          message: `${disconnectedName} disconnected. The game has ended.`
+        });
+      }
+
       broadcastRoom(roomId);
     }
   });

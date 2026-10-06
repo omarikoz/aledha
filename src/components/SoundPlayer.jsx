@@ -22,12 +22,12 @@ export default function SoundPlayer({ sound, timer }) {
   }, [sound?.id]);
 
   return (
-    <div className="w-full max-w-lg mx-auto px-4 py-6 text-center select-none">
+    <div className="w-full max-w-md mx-auto px-4 py-4 sm:py-6 text-center select-none">
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
         {/* Status Pill */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-500/20 border-2 border-cyan-400 text-cyan-300 font-extrabold text-xs sm:text-sm mb-4 animate-pulse">
           <Volume2 size={16} />
-          <span>LISTEN CLOSELY (استمع جيداً)</span>
+          <span>LISTEN CLOSELY 🔊</span>
         </div>
 
         {/* Sound Emoji Icon */}
@@ -36,14 +36,9 @@ export default function SoundPlayer({ sound, timer }) {
         </div>
 
         {/* Sound Title */}
-        <h2 className="text-2xl sm:text-4xl font-black text-white mt-3 mb-1 tracking-tight">
+        <h2 className="text-2xl sm:text-3xl font-black text-white mt-3 mb-2 tracking-tight">
           {sound.name}
         </h2>
-        {sound.nameAr && (
-          <p className="text-base sm:text-lg font-bold text-amber-300 font-cairo mb-3">
-            ({sound.nameAr})
-          </p>
-        )}
 
         {/* Clean Animated Audio Waves */}
         <div className="flex items-center justify-center gap-1.5 h-14 w-full max-w-xs my-3 bg-slate-950/80 rounded-2xl border-2 border-black p-3 shadow-inner">

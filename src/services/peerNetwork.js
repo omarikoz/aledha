@@ -98,9 +98,8 @@ class PeerNetwork {
 
     this.localPlayer = {
       id: hostPeerId,
-      name: playerName || 'The Host (المعلم)',
-      avatar: avatar || character?.avatar || '👑',
-      character: character || null,
+      name: (playerName || '').trim() || 'Host',
+      avatar: '🎤',
       score: 0,
       lastRoundScore: 0,
       isHost: true,
@@ -183,7 +182,15 @@ class PeerNetwork {
         console.log(`Guest disconnected: ${conn.peer}`);
         this.connections.delete(conn.peer);
         if (this.room) {
+          const leaving = this.room.players.find(p => p.id === conn.peer);
+          const leavingName = leaving?.name || 'A player';
           this.room.players = this.room.players.filter(p => p.id !== conn.peer);
+
+          if (this.room.state !== 'LOBBY' && this.room.state !== 'GAME_OVER' && this.room.state !== 'ABORTED') {
+            if (this.timerInterval) clearInterval(this.timerInterval);
+            this.room.state = 'ABORTED';
+            this.room.abortReason = `${leavingName} disconnected. The game has ended.`;
+          }
           this.notifyRoomUpdate();
         }
       });
@@ -203,9 +210,8 @@ class PeerNetwork {
 
       const newPlayer = {
         id: peerId,
-        name: data.playerName || `Player ${this.room.players.length + 1}`,
-        avatar: data.avatar || '🎙️',
-        character: data.character || null,
+        name: (data.playerName || '').trim() || `Player ${this.room.players.length + 1}`,
+        avatar: '🎤',
         score: 0,
         lastRoundScore: 0,
         isHost: false,
@@ -311,7 +317,11 @@ class PeerNetwork {
         });
 
         conn.on('close', () => {
-          if (this.onRoomUpdateCallback) {
+          if (this.room && this.room.state !== 'LOBBY' && this.room.state !== 'GAME_OVER' && this.room.state !== 'ABORTED') {
+            this.room.state = 'ABORTED';
+            this.room.abortReason = 'Host disconnected. The game has ended.';
+            if (this.onRoomUpdateCallback) this.onRoomUpdateCallback(this.room);
+          } else if (this.onRoomUpdateCallback) {
             this.onRoomUpdateCallback(null);
           }
         });
@@ -580,10 +590,12 @@ class PeerNetwork {
     }
   }
 
-  // Host resets to Lobby for play again
+  // Reset room to Lobby (Play Again or Return to Lobby after abort)
   playAgain() {
     if (!this.isHost || !this.room) return;
+    if (this.timerInterval) clearInterval(this.timerInterval);
     this.room.state = 'LOBBY';
+    this.room.abortReason = null;
     this.room.revealPhase = 'VOTING';
     this.room.currentRound = 1;
     this.room.recordings = [];
@@ -593,6 +605,10 @@ class PeerNetwork {
       p.lastRoundScore = 0;
     }
     this.notifyRoomUpdate();
+  }
+
+  returnToLobby() {
+    this.playAgain();
   }
 
   updateSettings(settings) {

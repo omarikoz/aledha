@@ -125,11 +125,6 @@ export default function SoundTester({ isOpen, onClose }) {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-black text-white text-sm">{s.name}</span>
-                    {s.nameAr && (
-                      <span className="text-xs font-bold text-amber-300 font-cairo">
-                        ({s.nameAr})
-                      </span>
-                    )}
                     <span className="text-[10px] bg-slate-800 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-400/30 font-bold">
                       {s.categoryName || s.category}
                     </span>

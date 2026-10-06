@@ -38,23 +38,23 @@ export default function Leaderboard({
   const sortedPlayers = [...(room.players || [])].sort((a, b) => b.score - a.score);
 
   return (
-    <div className="w-full max-w-xl mx-auto px-4 py-6">
+    <div className="w-full max-w-md mx-auto px-4 py-4 sm:py-6">
       <div className="arcade-card relative overflow-hidden text-center">
         {/* Header */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-400/20 border-2 border-amber-400 text-amber-300 font-black text-sm mb-4">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-400/20 border-2 border-amber-400 text-amber-300 font-black text-xs sm:text-sm mb-3">
           <Trophy size={16} />
           <span>Round {currentRound} of {totalRounds} Standings</span>
         </div>
 
-        <h2 className="text-3xl md:text-4xl font-black text-white mb-2">
+        <h2 className="text-2xl sm:text-3xl font-black text-white mb-1">
           Match Leaderboard 🔥
         </h2>
-        <p className="text-slate-300 text-sm mb-6">
-          Who hit the notes and who caused an acoustic disaster?
+        <p className="text-slate-300 text-xs sm:text-sm mb-5">
+          See who is dominating the vocal impersonations!
         </p>
 
         {/* Players Standings List */}
-        <div className="space-y-3 mb-6">
+        <div className="space-y-2.5 mb-6">
           {sortedPlayers.map((p, index) => {
             const isMe = p.id === player?.id;
             const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`;
@@ -62,7 +62,7 @@ export default function Leaderboard({
             return (
               <div
                 key={p.id}
-                className={`flex items-center justify-between p-3.5 rounded-2xl border-2 border-black shadow-[3px_3px_0px_#000] transition ${
+                className={`flex items-center justify-between p-3 rounded-2xl border-2 border-black shadow-[2px_2px_0px_#000] transition ${
                   index === 0
                     ? 'bg-gradient-to-r from-amber-500/30 via-slate-900 to-amber-500/10 border-amber-400'
                     : isMe
@@ -70,28 +70,15 @@ export default function Leaderboard({
                     : 'bg-slate-900/90'
                 }`}
               >
-                {/* Left: Rank & Avatar & Name */}
-                <div className="flex items-center gap-3 text-left">
-                  <div className="w-8 text-center text-xl font-black font-display text-amber-400">
+                {/* Left: Rank & Name */}
+                <div className="flex items-center gap-2.5 text-left">
+                  <div className="w-7 text-center text-lg font-black font-display text-amber-400">
                     {rankEmoji}
                   </div>
-                  <span className="text-3xl p-1 bg-black/40 rounded-xl border border-white/10">
-                    {p.avatar || p.character?.avatar || '👑'}
-                  </span>
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="font-black text-white text-base">{p.name}</span>
-                      {p.character && (
-                        <span className="text-[10px] text-amber-300 font-bold font-cairo">
-                          ({p.character.nameAr || p.character.name})
-                        </span>
-                      )}
-                      {index === 0 && <Crown size={15} className="text-amber-400 fill-amber-400" />}
-                      {p.isBot && (
-                        <span className="text-[10px] bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded border border-purple-400/30 font-bold">
-                          BOT
-                        </span>
-                      )}
+                      <span className="font-black text-white text-sm sm:text-base">{p.name}</span>
+                      {index === 0 && <Crown size={14} className="text-amber-400 fill-amber-400" />}
                       {isMe && (
                         <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-black">
                           YOU
@@ -99,7 +86,7 @@ export default function Leaderboard({
                       )}
                     </div>
                     {p.lastRoundScore > 0 && (
-                      <span className="text-xs text-emerald-400 font-bold">
+                      <span className="text-[11px] text-emerald-400 font-bold block">
                         +{p.lastRoundScore} pts this round
                       </span>
                     )}
@@ -107,9 +94,9 @@ export default function Leaderboard({
                 </div>
 
                 {/* Right: Total Score */}
-                <div className="text-right bg-slate-950 px-3.5 py-1.5 rounded-xl border border-white/10 shadow-inner">
-                  <div className="text-[10px] font-bold text-slate-400">TOTAL</div>
-                  <div className="text-xl font-display font-black text-amber-400">
+                <div className="text-right bg-slate-950 px-3 py-1.5 rounded-xl border border-white/10 shadow-inner">
+                  <div className="text-[9px] font-bold text-slate-400">TOTAL</div>
+                  <div className="text-lg sm:text-xl font-display font-black text-amber-400">
                     {p.score}
                   </div>
                 </div>

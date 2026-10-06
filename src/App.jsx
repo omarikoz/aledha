@@ -77,38 +77,54 @@ export default function App() {
       }
     });
 
+    socket.on('game_aborted', (data) => {
+      if (!peerNetwork.roomId) {
+        setRoom((prev) =>
+          prev
+            ? {
+                ...prev,
+                state: 'ABORTED',
+                abortReason:
+                  data?.message ||
+                  `${data?.playerName || 'A player'} disconnected. The game has ended.`
+              }
+            : null
+        );
+      }
+    });
+
     return () => {
       socket.off('room_update');
+      socket.off('game_aborted');
     };
   }, []);
 
   // Handlers for Lobby Room Creation & Joining
-  const handleCreateRoom = ({ playerName, avatar, character }) => {
-    // If local Node.js socket server is connected, use it; otherwise use P2P WebRTC directly on mobile/browser
+  const handleCreateRoom = ({ playerName }) => {
     if (socket.connected) {
-      socket.emit('create_room', { playerName, avatar, character }, (res) => {
+      socket.emit('create_room', { playerName }, (res) => {
         if (res?.success) {
           setPlayer(res.player);
         } else {
-          peerNetwork.createRoom({ playerName, avatar, character }, (p2pRes) => {
+          peerNetwork.createRoom({ playerName }, (p2pRes) => {
             if (p2pRes.success) setPlayer(p2pRes.player);
           });
         }
       });
     } else {
-      peerNetwork.createRoom({ playerName, avatar, character }, (p2pRes) => {
+      peerNetwork.createRoom({ playerName }, (p2pRes) => {
         if (p2pRes.success) setPlayer(p2pRes.player);
       });
     }
   };
 
-  const handleJoinRoom = ({ roomId, playerName, avatar, character }, onError) => {
+  const handleJoinRoom = ({ roomId, playerName }, onError) => {
     if (socket.connected) {
-      socket.emit('join_room', { roomId, playerName, avatar, character }, (res) => {
+      socket.emit('join_room', { roomId, playerName }, (res) => {
         if (res?.success) {
           setPlayer(res.player);
         } else {
-          peerNetwork.joinRoom({ roomId, playerName, avatar, character }, (p2pRes) => {
+          peerNetwork.joinRoom({ roomId, playerName }, (p2pRes) => {
             if (p2pRes.success) {
               setPlayer(p2pRes.player);
             } else if (onError) {
@@ -118,7 +134,7 @@ export default function App() {
         }
       });
     } else {
-      peerNetwork.joinRoom({ roomId, playerName, avatar, character }, (p2pRes) => {
+      peerNetwork.joinRoom({ roomId, playerName }, (p2pRes) => {
         if (p2pRes.success) {
           setPlayer(p2pRes.player);
         } else if (onError) {
@@ -187,7 +203,18 @@ export default function App() {
     }
   };
 
-  // Leave Room
+  // Return to Lobby after Match Abort
+  const handleReturnToLobby = () => {
+    if (peerNetwork.roomId) {
+      peerNetwork.returnToLobby();
+    } else if (room?.id) {
+      socket.emit('return_to_lobby', { roomId: room.id });
+    } else {
+      handleLeaveRoom();
+    }
+  };
+
+  // Leave Room / Main Menu
   const handleLeaveRoom = () => {
     peerNetwork.cleanup();
     setRoom(null);
@@ -260,6 +287,32 @@ export default function App() {
             player={player}
             onAdvanceRound={handleAdvanceRound}
           />
+        ) : room.state === 'ABORTED' ? (
+          <div className="w-full max-w-md mx-auto px-4 py-8 text-center animate-bounce-in">
+            <div className="arcade-card p-6 sm:p-8 space-y-4">
+              <div className="text-4xl sm:text-5xl animate-bounce">⚠️</div>
+              <h3 className="text-xl sm:text-2xl font-black text-rose-400">
+                Match Aborted
+              </h3>
+              <p className="text-slate-200 text-sm font-semibold">
+                {room.abortReason || 'A player disconnected. The game has ended.'}
+              </p>
+              <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
+                <button
+                  onClick={handleReturnToLobby}
+                  className="btn-arcade btn-arcade-gold flex-1 text-base py-3.5 shadow-[3px_3px_0px_#000]"
+                >
+                  Return to Lobby
+                </button>
+                <button
+                  onClick={handleLeaveRoom}
+                  className="btn-arcade btn-arcade-dark py-3.5 px-5 text-sm"
+                >
+                  Main Menu
+                </button>
+              </div>
+            </div>
+          </div>
         ) : room.state === 'GAME_OVER' ? (
           <GameOver
             room={room}
@@ -272,7 +325,7 @@ export default function App() {
 
       {/* Footer Info */}
       <footer className="w-full text-center py-2.5 text-[11px] sm:text-xs text-slate-500 font-bold border-t border-white/5">
-        Aledha (قَلِّدْهَا) • Egyptian Voice Party Game 🇪🇬 • Multiplayer with Friends
+        Aledha • Voice Mimic Party Game • Multiplayer with Friends
       </footer>
 
       {/* Sound Library & Mic Tester Modal */}

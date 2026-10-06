@@ -1,24 +1,7 @@
-import React, { useState } from 'react';
-import { Users, Crown, Sparkles, Play, Dices, Settings, Copy, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, Crown, Play, Settings, Copy, Check } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
-import { DEFAULT_CHARACTER } from '../data/characters.js';
-import CharacterSelectModal from './CharacterSelectModal.jsx';
-
-const FUNNY_NAMES = [
-  'The Boss (El-Moalem) 👑', 'Captain Koshary 🍲', 'DJ Toktok 🛺', 'Doctor Dahk 😂',
-  'Ahwa Master ☕', 'Shaabi King 🎤', 'Princesa Sousou 💃', 'Baladi Beat 🥁',
-  'Cairo Legend 🏙️', 'Microbus Maestro 🚐', 'Nile Hero 🌊', '3ammo Shakshak 🪕',
-  'Abu Galambo 🦀', 'Sico el-3agouz 👴', 'Boba el-Sayad 🎣', 'Mido el-Saree3 ⚡',
-  'El-Prince Hemo 🤴', 'Om Kalthoum Fan 🎙️', 'Zizo el-Fanatasy 🪄', 'El-Nimr el-Aswad 🐯',
-  'Koko el-Sweed 🥖', '3antel el-Giza 🥊', 'Beshbeshi el-Wale3 🔥', 'Sheikha Bamba 🪘',
-  'Hamada el-Gedaan 😎', 'Batta el-Helwa 🦆', 'Fahd el-Sahraa 🐆', 'Osta Kareem 🚕',
-  'Karika el-Moshagheb 😈', 'Felfel el-Shateer 🌶️', 'Abu Hadeed 💪', 'Tamer Hosny Clone 🎸',
-  'Meshmesh el-Rayeq 🍹', 'El-Batran el-Kabeer 🎩', 'Zahran el-Tayar 🚀', 'Hoda Bondok 🌰',
-  'Sultan el-Tarab 🎶', 'Moalem Tarboush 🎩', 'Bebo el-Haddad 🔨', 'Roushdi Abaza Jr 🕶️',
-  'Shalaby el-Sokkar 🍬', 'Fikry el-Abqari 🧠', 'Semsem el-Gada3 🥨', 'Bogy & Tamtam 🧸',
-  'Saeed el-Hawa 🌬️', 'Hassan Shakosh Vibe 🔨', 'El-Khedewi 💎', 'Zaki Shanab 👨'
-];
 
 export default function Lobby({
   room,
@@ -30,52 +13,36 @@ export default function Lobby({
   onStartGame,
   onUpdateSettings
 }) {
-  const [name, setName] = useState(() => FUNNY_NAMES[Math.floor(Math.random() * FUNNY_NAMES.length)]);
-  const [selectedCharacter, setSelectedCharacter] = useState(DEFAULT_CHARACTER);
-  const [isCharModalOpen, setIsCharModalOpen] = useState(false);
+  const [name, setName] = useState('');
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [joinMode, setJoinMode] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [copied, setCopied] = useState(false);
-
-  // Pre-Game Audio Check State
   const [testingMic, setTestingMic] = useState(false);
-  const [testVolume, setTestVolume] = useState(0);
-  const [micVerified, setMicVerified] = useState(() => audioEngine.isMicReady());
+  const [micVerified, setMicVerified] = useState(() => audioEngine.isMicReady() || !!micReady);
 
-  // Explicit Pre-Game Microphone Permission & Initialization Check
-  const handleCheckAndInitMic = async () => {
+  useEffect(() => {
+    if (micReady) {
+      setMicVerified(true);
+    }
+  }, [micReady]);
+
+  // Single compact mic initialization check
+  const handleEnableMic = async () => {
     soundSynthesizer.playUiSound('click');
     setTestingMic(true);
-    const stream = await audioEngine.initMicrophone();
-    if (!stream) {
-      setTestingMic(false);
-      setMicVerified(false);
-      return false;
-    }
-    setMicVerified(true);
-    if (onRequestMic) onRequestMic();
-
-    // Start live audio sensitivity monitor
-    const stopMonitor = audioEngine.startLiveLevelMonitor((level) => {
-      setTestVolume(level);
-      if (level > 0.03) {
+    try {
+      audioEngine.unlockAudioContext();
+      const stream = await audioEngine.initMicrophone();
+      if (stream) {
         setMicVerified(true);
+        if (onRequestMic) onRequestMic();
       }
-    });
-
-    setTimeout(() => {
+    } catch (e) {
+      console.warn('Microphone activation failed:', e);
+    } finally {
       setTestingMic(false);
-      stopMonitor();
-    }, 4000);
-    return true;
-  };
-
-  // Randomize nickname
-  const handleRandomizeName = () => {
-    soundSynthesizer.playUiSound('click');
-    const random = FUNNY_NAMES[Math.floor(Math.random() * FUNNY_NAMES.length)];
-    setName(random);
+    }
   };
 
   const handleCopyCode = () => {
@@ -91,194 +58,128 @@ export default function Lobby({
     }
   };
 
-  // If player is not in a room yet, show Create/Join screen
+  const isNameValid = name.trim().length > 0;
+
+  // 1. Entry / Join screen (When player is not in a room yet)
   if (!room) {
     return (
-      <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 sm:py-6">
-        <div className="arcade-card relative overflow-hidden text-center">
-          {/* Egyptian header tag */}
-          <div className="text-xs font-black text-amber-400/60 uppercase tracking-widest mb-1 font-cairo">
-            جمهورية قلدها المصرية 🇪🇬
-          </div>
-
-          <div className="inline-block p-2.5 rounded-2xl bg-amber-400/20 border-2 border-amber-400 mb-3 animate-bounce-in">
+      <div className="w-full max-w-md mx-auto px-4 py-4 sm:py-6">
+        <div className="arcade-card relative overflow-hidden text-center space-y-4">
+          <div className="inline-block p-3 rounded-2xl bg-amber-400/20 border-2 border-amber-400 animate-bounce-in">
             <span className="text-3xl sm:text-4xl">🎙️</span>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-black text-white mb-1 tracking-tight">
-            Ready to Play with Friends?!
-          </h2>
-          <p className="text-slate-300 text-xs sm:text-sm mb-3 px-2">
-            Listen to iconic Egyptian sounds, say them into your mic, and see who did the best sound!
-          </p>
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-black text-white mb-1 tracking-tight">
+              Ready to Play?
+            </h2>
+            <p className="text-slate-300 text-xs sm:text-sm px-2">
+              Listen to sounds, record your mimicry, and vote on the best takes with friends!
+            </p>
+          </div>
 
-          {/* Pre-Game Audio Check / Enable Mic (Explicit Pre-Round Verification) */}
-          <div className="mb-4 p-3.5 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[3px_3px_0px_#000] text-left">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🎙️</span>
-                <div>
-                  <h4 className="text-xs sm:text-sm font-black text-white">
-                    Pre-Game Audio Check (فحص المايكروفون)
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-semibold">
-                    Test your microphone now so your rounds record smoothly!
-                  </p>
-                </div>
-              </div>
-              {micVerified ? (
-                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 text-[11px] font-black border border-emerald-500/40">
-                  Ready ✅
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleCheckAndInitMic}
-                  className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3"
-                >
-                  {testingMic ? 'Testing... 🔊' : 'Enable Mic 🎤'}
-                </button>
-              )}
+          {/* Simplified Mic Button (Single Compact Button) */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[2px_2px_0px_#000]">
+            <div className="text-left">
+              <span className="text-xs font-black text-white block">Microphone</span>
+              <span className="text-[11px] text-slate-400 block">
+                {micVerified ? 'Microphone is ready for rounds' : 'Enable mic access before starting'}
+              </span>
             </div>
 
-            {/* Live Volume Meter during test or verified state */}
-            {(testingMic || micVerified) && (
-              <div className="mt-2 pt-2 border-t border-white/10">
-                <div className="flex justify-between items-center text-[10px] font-bold text-slate-300 mb-1">
-                  <span>Mic Sensitivity (حساسية الصوت):</span>
-                  <span className={testVolume > 0.03 ? 'text-emerald-400 font-bold' : 'text-slate-400'}>
-                    {testVolume > 0.03 ? 'Voice Detected! 🔊' : 'Speak into your mic to test...'}
-                  </span>
-                </div>
-                <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-black">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-400 to-amber-400 transition-all duration-75 rounded-full"
-                    style={{ width: `${Math.min(100, Math.max(5, testVolume * 100))}%` }}
-                  />
-                </div>
-                {micVerified && (
-                  <div className="mt-1.5 text-center text-[10px] font-bold text-emerald-400">
-                    ✅ Microphone verified! Ready to capture your vocal takes.
-                  </div>
-                )}
-              </div>
+            {micVerified ? (
+              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 text-xs font-black border-2 border-emerald-500/50">
+                ✓ Mic Ready
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleEnableMic}
+                disabled={testingMic}
+                className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3"
+              >
+                {testingMic ? 'Connecting...' : '🎙️ Enable Mic'}
+              </button>
             )}
           </div>
 
-          {/* Player Name Input */}
-          <div className="mb-4 text-left">
+          {/* Single Clean Name Input Bar */}
+          <div className="text-left">
             <label className="block text-xs font-bold text-amber-300 mb-1.5">
-              Your Stage Name (اللقب الفني):
+              Your Name:
             </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={name}
-                maxLength={24}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Enter your nickname..."
-                className="w-full bg-slate-900 border-2 border-black rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 shadow-[2px_2px_0px_#000]"
-              />
-              <button
-                type="button"
-                onClick={handleRandomizeName}
-                title="Random Name"
-                className="bg-slate-800 hover:bg-slate-700 border-2 border-black px-3 rounded-xl shadow-[2px_2px_0px_#000] text-amber-300 transition active:scale-95"
-              >
-                <Dices size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* Character / Avatar Selection Card */}
-          <div className="mb-5 text-left">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-amber-300">
-                Selected Character (الشخصية):
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  soundSynthesizer.playUiSound('click');
-                  setIsCharModalOpen(true);
-                }}
-                className="text-xs text-amber-400 hover:text-white font-extrabold underline flex items-center gap-1 transition"
-              >
-                <span>Change 🎭</span>
-              </button>
-            </div>
-
-            {/* Selected Character Preview Banner */}
-            <div
-              onClick={() => {
-                soundSynthesizer.playUiSound('click');
-                setIsCharModalOpen(true);
+            <input
+              type="text"
+              value={name}
+              maxLength={20}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (errorMessage) setErrorMessage('');
               }}
-              className="p-2.5 bg-slate-950/80 hover:bg-slate-900 border-2 border-black rounded-2xl flex items-center justify-between cursor-pointer transition shadow-[2px_2px_0px_#000] group"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-12 h-12 rounded-xl bg-slate-800 border-2 border-black flex items-center justify-center text-2xl shadow group-hover:scale-105 transition">
-                  {selectedCharacter.avatar}
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="text-sm font-black text-white">{selectedCharacter.name}</h3>
-                    <span className="text-xs font-bold text-amber-300 font-cairo">({selectedCharacter.nameAr})</span>
-                  </div>
-                  <span className="text-[11px] text-cyan-300 font-bold block">{selectedCharacter.title}</span>
-                </div>
-              </div>
-
-              <div className="px-2.5 py-1 rounded-xl bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[11px] font-extrabold flex items-center gap-1 group-hover:bg-amber-400 group-hover:text-black transition">
-                <Sparkles size={12} />
-                <span>Roster</span>
-              </div>
-            </div>
+              placeholder="Enter your name"
+              className="w-full bg-slate-900 border-2 border-black rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 shadow-[2px_2px_0px_#000]"
+            />
+            {!isNameValid && (
+              <p className="text-[11px] text-slate-400 mt-1">
+                Please enter your name to create or join a room.
+              </p>
+            )}
           </div>
 
           {errorMessage && (
-            <div className="mb-4 p-2.5 bg-red-900/60 border-2 border-red-500 rounded-xl text-red-200 text-xs sm:text-sm font-bold animate-wiggle">
+            <div className="p-2.5 bg-rose-900/60 border-2 border-rose-500 rounded-xl text-rose-200 text-xs sm:text-sm font-bold animate-wiggle">
               {errorMessage}
             </div>
           )}
 
           {/* Action Tabs: Create Room vs Join Room */}
           {!joinMode ? (
-            <div className="space-y-3">
+            <div className="space-y-3 pt-1">
               <button
+                disabled={!isNameValid}
                 onClick={async () => {
+                  if (!isNameValid) return;
                   if (!micVerified) {
-                    const ok = await handleCheckAndInitMic();
-                    if (!ok) return;
+                    await handleEnableMic();
                   }
                   soundSynthesizer.playUiSound('go');
-                  onCreateRoom({ playerName: name, avatar: selectedCharacter.avatar, character: selectedCharacter });
+                  onCreateRoom({ playerName: name.trim() });
                 }}
-                className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2"
+                className={`btn-arcade w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2 ${
+                  isNameValid
+                    ? 'btn-arcade-gold'
+                    : 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-60 shadow-none'
+                }`}
               >
                 <Crown size={20} />
-                <span>Create New Room (Host Game)</span>
+                <span>Create Room</span>
               </button>
 
               <button
+                disabled={!isNameValid}
                 onClick={async () => {
+                  if (!isNameValid) return;
                   soundSynthesizer.playUiSound('click');
                   if (!micVerified) {
-                    handleCheckAndInitMic().catch(() => {});
+                    handleEnableMic().catch(() => {});
                   }
                   setJoinMode(true);
                 }}
-                className="btn-arcade btn-arcade-cyan w-full text-sm sm:text-base py-3 flex items-center justify-center gap-2"
+                className={`btn-arcade w-full text-sm sm:text-base py-3 flex items-center justify-center gap-2 ${
+                  isNameValid
+                    ? 'btn-arcade-cyan'
+                    : 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-60 shadow-none'
+                }`}
               >
                 <Users size={18} />
-                <span>Join Friend's Room</span>
+                <span>Join Room</span>
               </button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 pt-1">
               <div className="text-left">
                 <label className="block text-xs font-bold text-cyan-300 mb-1.5">
-                  Enter 4-Letter Room Code:
+                  Enter Room Code:
                 </label>
                 <input
                   type="text"
@@ -291,23 +192,34 @@ export default function Lobby({
               </div>
 
               <button
+                disabled={!isNameValid || !roomCodeInput.trim()}
                 onClick={async () => {
+                  if (!isNameValid) {
+                    setErrorMessage('Please enter your name first!');
+                    return;
+                  }
                   if (!roomCodeInput.trim()) {
                     setErrorMessage('Please enter a room code first!');
                     return;
                   }
                   if (!micVerified) {
-                    const ok = await handleCheckAndInitMic();
-                    if (!ok) return;
+                    await handleEnableMic();
                   }
                   soundSynthesizer.playUiSound('go');
-                  onJoinRoom({ roomId: roomCodeInput.trim(), playerName: name, avatar: selectedCharacter.avatar, character: selectedCharacter }, (err) => {
-                    if (err) setErrorMessage(err);
-                  });
+                  onJoinRoom(
+                    { roomId: roomCodeInput.trim(), playerName: name.trim() },
+                    (err) => {
+                      if (err) setErrorMessage(err);
+                    }
+                  );
                 }}
-                className="btn-arcade btn-arcade-cyan w-full text-base sm:text-lg py-3.5"
+                className={`btn-arcade w-full text-base sm:text-lg py-3.5 ${
+                  isNameValid && roomCodeInput.trim()
+                    ? 'btn-arcade-cyan'
+                    : 'bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed opacity-60 shadow-none'
+                }`}
               >
-                <span>Enter Room Now 🚪</span>
+                <span>Enter Room 🚪</span>
               </button>
 
               <button
@@ -318,32 +230,21 @@ export default function Lobby({
                 }}
                 className="btn-arcade btn-arcade-dark w-full text-xs sm:text-sm py-2.5"
               >
-                <span>Back to Options</span>
+                <span>Back</span>
               </button>
             </div>
           )}
         </div>
-
-        {/* Character Selection Modal */}
-        <CharacterSelectModal
-          isOpen={isCharModalOpen}
-          selectedCharacterId={selectedCharacter.id}
-          onSelectCharacter={(char) => {
-            setSelectedCharacter(char);
-            setIsCharModalOpen(false);
-          }}
-          onClose={() => setIsCharModalOpen(false)}
-        />
       </div>
     );
   }
 
-  // When player is inside an active room lobby (Mobile-First Polish!)
+  // 2. Inside Room Lobby Screen
   const isHost = player?.isHost;
   const currentPlayers = room.players || [];
 
   return (
-    <div className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 sm:py-4">
+    <div className="w-full max-w-md mx-auto px-4 py-3 sm:py-4">
       <div className="arcade-card text-left space-y-4">
         {/* Room Code Share Banner */}
         <div className="bg-slate-950/90 border-2 border-black rounded-2xl p-3 sm:p-4 text-center shadow-[3px_3px_0px_#000]">
@@ -359,15 +260,19 @@ export default function Lobby({
               title="Copy Room Code"
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/10 text-white transition active:scale-95"
             >
-              {copied ? <Check size={18} className="text-emerald-400" /> : <Copy size={18} className="text-amber-300" />}
+              {copied ? (
+                <Check size={18} className="text-emerald-400" />
+              ) : (
+                <Copy size={18} className="text-amber-300" />
+              )}
             </button>
           </div>
           <span className="text-[11px] text-cyan-300 font-bold">
-            {copied ? '✅ Code Copied to Clipboard!' : 'Tell your friends to enter this code on their phones!'}
+            {copied ? '✓ Code copied to clipboard!' : 'Give this code to friends on their phones!'}
           </span>
         </div>
 
-        {/* Match Settings: Compact Pills for Mobile */}
+        {/* Match Settings: Rounds Selection */}
         <div className="bg-slate-900/80 border-2 border-black rounded-2xl p-3 shadow-[2px_2px_0px_#000]">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
@@ -406,13 +311,13 @@ export default function Lobby({
           )}
         </div>
 
-        {/* Players in Lobby */}
+        {/* Players List (Clean text, no avatars/caricatures) */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
-              <Users size={18} className="text-cyan-400" />
-              <h3 className="text-sm font-black text-white">
-                Friends in Lobby ({currentPlayers.length}/8)
+              <Users size={16} className="text-cyan-400" />
+              <h3 className="text-xs sm:text-sm font-black text-white">
+                Players in Lobby ({currentPlayers.length}/8)
               </h3>
             </div>
             <span className="text-[11px] text-emerald-400 font-bold animate-pulse">
@@ -421,39 +326,39 @@ export default function Lobby({
           </div>
 
           <div className="space-y-2">
-            {currentPlayers.map((p) => (
-              <div
-                key={p.id}
-                className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 border-black shadow-[2px_2px_0px_#000] ${
-                  p.id === player?.id
-                    ? 'bg-amber-400/20 border-amber-400'
-                    : 'bg-slate-900/90'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl sm:text-3xl p-1 bg-black/40 rounded-xl border border-white/10">
-                    {p.avatar}
-                  </span>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-black text-white text-sm">{p.name}</span>
-                      {p.isHost && (
-                        <span title="Host (المعلم)">
-                          <Crown size={14} className="text-amber-400 fill-amber-400" />
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] sm:text-[11px] text-slate-400 block">
-                      {p.id === player?.id ? 'You (Ready)' : p.isHost ? 'Room Host' : 'Ready to Play'}
+            {currentPlayers.map((p) => {
+              const isMe = p.id === player?.id;
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border-2 border-black shadow-[2px_2px_0px_#000] ${
+                    isMe
+                      ? 'bg-amber-400/20 border-amber-400'
+                      : 'bg-slate-900/90'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-white text-sm">
+                      {p.name}
                     </span>
+                    {p.isHost && (
+                      <span title="Host">
+                        <Crown size={14} className="text-amber-400 fill-amber-400" />
+                      </span>
+                    )}
+                    {isMe && (
+                      <span className="text-[10px] bg-amber-400 text-black font-extrabold px-1.5 py-0.5 rounded">
+                        You
+                      </span>
+                    )}
                   </div>
-                </div>
 
-                <div className="px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-[10px] font-black border border-emerald-500/40">
-                  Ready ✅
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-[11px] font-black border border-emerald-500/40">
+                    Ready ✓
+                  </span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {currentPlayers.length < 2 && (
               <div className="p-3 rounded-xl border-2 border-dashed border-white/15 bg-slate-950/40 text-center">
@@ -461,37 +366,34 @@ export default function Lobby({
                   Waiting for friends to join...
                 </span>
                 <span className="text-[11px] text-slate-400 block">
-                  Give them room code <span className="font-mono font-black text-white">{room.id}</span>
+                  Share room code <span className="font-mono font-black text-white">{room.id}</span>
                 </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Microphone Status Banner in Active Room */}
+        {/* Microphone Status in Lobby */}
         <div className="p-3 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl">🎙️</span>
-            <div>
-              <span className="text-xs font-black text-white block">
-                Microphone Readiness (حالة المايك):
-              </span>
-              <span className="text-[10px] text-slate-400 font-semibold block">
-                {micVerified ? 'Microphone enabled & ready!' : 'Click to enable microphone before starting!'}
-              </span>
-            </div>
+          <div>
+            <span className="text-xs font-black text-white block">Microphone</span>
+            <span className="text-[10px] text-slate-400 block">
+              {micVerified ? 'Microphone enabled & ready' : 'Enable microphone before starting'}
+            </span>
           </div>
+
           {micVerified ? (
             <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 text-xs font-black border border-emerald-500/40">
-              Ready ✅
+              ✓ Mic Ready
             </span>
           ) : (
             <button
               type="button"
-              onClick={handleCheckAndInitMic}
+              onClick={handleEnableMic}
+              disabled={testingMic}
               className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3"
             >
-              {testingMic ? 'Testing... 🔊' : 'Enable Mic 🎤'}
+              {testingMic ? 'Connecting...' : '🎙️ Enable Mic'}
             </button>
           )}
         </div>
@@ -504,13 +406,13 @@ export default function Lobby({
                 <button
                   disabled
                   type="button"
-                  className="btn-arcade bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 opacity-60 shadow-none"
+                  className="btn-arcade bg-slate-800 text-slate-500 border-slate-700 cursor-not-allowed w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2 opacity-60 shadow-none"
                 >
                   <Play size={20} className="fill-slate-500" />
-                  <span>ابدأ اللعبة (Start Game) 🔥</span>
+                  <span>Start Game 🔥</span>
                 </button>
-                <div className="text-center p-2.5 rounded-xl bg-amber-500/15 border-2 border-amber-500/30 text-amber-300 text-xs sm:text-sm font-bold font-cairo animate-pulse">
-                  في انتظار لاعب آخر على الأقل للبدء (الحد الأدنى ٢ لاعبين) ⏳
+                <div className="text-center p-2.5 rounded-xl bg-amber-500/15 border-2 border-amber-500/30 text-amber-300 text-xs sm:text-sm font-bold animate-pulse">
+                  Waiting for at least 2 players to start (minimum 2 players)...
                 </div>
               </div>
             ) : (
@@ -518,17 +420,16 @@ export default function Lobby({
                 type="button"
                 onClick={async () => {
                   if (!micVerified) {
-                    const ok = await handleCheckAndInitMic();
-                    if (!ok) return;
+                    await handleEnableMic();
                   }
                   soundSynthesizer.playUiSound('go');
                   if (onRequestMic) onRequestMic();
                   onStartGame();
                 }}
-                className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-4 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
+                className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3.5 flex items-center justify-center gap-2 shadow-[3px_3px_0px_#000]"
               >
                 <Play size={20} className="fill-black" />
-                <span>ابدأ اللعبة (Start Game) 🔥</span>
+                <span>Start Game 🔥</span>
               </button>
             )
           ) : (
@@ -539,24 +440,13 @@ export default function Lobby({
               </p>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 {currentPlayers.length < 2
-                  ? 'في انتظار لاعب آخر على الأقل للبدء (الحد الأدنى ٢ لاعبين)'
-                  : 'Get ready to make the sound on your phone!'}
+                  ? 'Waiting for at least 2 players to start (minimum 2 players)...'
+                  : 'Get ready to mimic the sound on your mic!'}
               </p>
             </div>
           )}
         </div>
       </div>
-
-      {/* Character Selection Modal */}
-      <CharacterSelectModal
-        isOpen={isCharModalOpen}
-        selectedCharacterId={selectedCharacter.id}
-        onSelectCharacter={(char) => {
-          setSelectedCharacter(char);
-          setIsCharModalOpen(false);
-        }}
-        onClose={() => setIsCharModalOpen(false)}
-      />
     </div>
   );
 }

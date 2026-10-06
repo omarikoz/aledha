@@ -56,7 +56,7 @@ class AudioEngine {
     } catch (err) {
       console.error("Microphone access denied or error:", err);
       if (typeof window !== 'undefined' && window.alert) {
-        alert("يرجى تفعيل المايكروفون من إعدادات المتصفح لتتمكن من اللعب!");
+        alert("Please enable microphone permissions in your browser to play!");
       }
       return null;
     }

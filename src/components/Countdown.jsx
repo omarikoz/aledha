@@ -11,11 +11,11 @@ export default function Countdown({ seconds, currentRound, totalRounds }) {
     }
   }, [seconds]);
 
-  const displayCount = seconds === 3 ? '3' : seconds === 2 ? '2' : seconds === 1 ? '1' : 'قَلِّدْهَا!';
+  const displayCount = seconds === 3 ? '3' : seconds === 2 ? '2' : seconds === 1 ? '1' : 'MIMIC IT!';
 
   return (
-    <div className="w-full max-w-lg mx-auto px-4 py-12 text-center">
-      <div className="arcade-card relative overflow-hidden flex flex-col items-center justify-center py-10">
+    <div className="w-full max-w-lg mx-auto px-4 py-8 sm:py-12 text-center">
+      <div className="arcade-card relative overflow-hidden flex flex-col items-center justify-center py-8 sm:py-10">
         {/* Round Badge */}
         <div className="arcade-badge bg-purple-600/30 text-purple-200 border-purple-500 mb-6">
           <Sparkles size={16} className="text-purple-300" />
@@ -23,7 +23,7 @@ export default function Countdown({ seconds, currentRound, totalRounds }) {
         </div>
 
         <h3 className="text-2xl md:text-3xl font-black text-amber-300 mb-6 animate-pulse">
-          Get Ready... Listen Closely! (استعد)
+          Get Ready... Listen Closely!
         </h3>
 
         {/* Big Animated Countdown Ring */}

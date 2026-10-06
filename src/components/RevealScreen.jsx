@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Volume2, Sparkles, Check, Users } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
-import CharacterAvatar from './CharacterAvatar.jsx';
 
 export default function RevealScreen({
   room,
@@ -129,18 +128,14 @@ export default function RevealScreen({
           </div>
         </div>
 
-        {/* Center: Contestant Avatar & Stage Name */}
+        {/* Center: Contestant Name */}
         <div className="flex flex-col items-center justify-center pt-2">
-          <CharacterAvatar
-            avatar={currentRec.avatar || contestantCharacter?.avatar || '👑'}
-            name={currentRec.playerName}
-            character={contestantCharacter}
-            isTalking={isPlayingAudio}
-            size="xl"
-          />
+          <div className="w-16 h-16 rounded-2xl bg-slate-900 border-2 border-black flex items-center justify-center text-3xl shadow-[3px_3px_0px_#000]">
+            🎙️
+          </div>
 
-          <div className="flex items-center gap-2 mt-3">
-            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+          <div className="flex items-center gap-2 mt-2">
+            <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               {currentRec.playerName}
             </h3>
             {isCurrentUser && (
@@ -149,12 +144,6 @@ export default function RevealScreen({
               </span>
             )}
           </div>
-
-          {contestantCharacter && (
-            <div className="text-xs text-amber-300 font-bold font-cairo mt-0.5">
-              "{contestantCharacter.nameAr || contestantCharacter.name}"
-            </div>
-          )}
         </div>
 
         {/* Animated Soundwave Indicator while playing */}
@@ -186,10 +175,10 @@ export default function RevealScreen({
               <div className="py-4 space-y-2">
                 <div className="text-3xl animate-bounce">🎙️</div>
                 <h4 className="text-base sm:text-lg font-black text-amber-400">
-                  اللاعبون الآخرون يقيمون صوتك الآن ⏳
+                  Other players are rating your sound...
                 </h4>
                 <p className="text-xs text-slate-400 font-bold">
-                  Other players are rating your take (1 to 100)...
+                  Your take is currently being evaluated (1 to 100)
                 </p>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-white/10 text-xs font-mono font-bold text-emerald-400 mt-2">
                   <Users size={14} />
@@ -246,7 +235,7 @@ export default function RevealScreen({
                 {hasVoted ? (
                   <div className="p-3 rounded-2xl bg-emerald-500/20 border-2 border-emerald-500 text-emerald-400 font-black text-sm flex items-center justify-center gap-2">
                     <Check size={18} />
-                    <span>تم تسجيل صوتك ({voteValue} / 100) ✅</span>
+                    <span>Vote Recorded ({voteValue} / 100) ✓</span>
                   </div>
                 ) : (
                   <button
@@ -254,7 +243,7 @@ export default function RevealScreen({
                     onClick={handleCastVote}
                     className="btn-arcade btn-arcade-gold w-full text-base sm:text-lg py-3 flex items-center justify-center gap-2 shadow-[2px_2px_0px_#000]"
                   >
-                    <span>صوّت (Submit Vote) 🗳️</span>
+                    <span>Submit Vote 🗳️</span>
                   </button>
                 )}
               </div>
@@ -266,7 +255,7 @@ export default function RevealScreen({
         {revealPhase === 'RESULT' && (
           <div className="mt-4 p-5 rounded-3xl bg-slate-950/95 border-3 border-amber-400 shadow-[4px_4px_0px_#000] text-center animate-bounce-in space-y-2">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
-              متوسط تقييم اللاعبين (Peer Voted Score)
+              Peer Voted Score
             </span>
 
             {/* Prominent Average Score Display */}

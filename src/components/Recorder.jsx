@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Mic, CheckCircle2, AlertCircle } from 'lucide-react';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
-import CharacterAvatar from './CharacterAvatar.jsx';
 
 export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   const [micVolume, setMicVolume] = useState(0);
@@ -146,24 +145,19 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
   return (
     <div
       onClick={() => audioEngine.unlockAudioContext()}
-      className="w-full max-w-lg mx-auto px-4 py-6 text-center select-none"
+      className="w-full max-w-md mx-auto px-4 py-4 sm:py-6 text-center select-none"
     >
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
         {/* Clean Pulsing Recording Badge */}
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
           <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
-          <span>🔴 RECORDING: SAY IT NOW! (قَلِّدْهَا)</span>
+          <span>🔴 RECORDING: MIMIC IT NOW!</span>
         </div>
 
         {/* Sound Title */}
-        <h2 className="text-2xl sm:text-3xl font-black text-amber-400 mb-0.5 tracking-tight">
+        <h2 className="text-2xl sm:text-3xl font-black text-amber-400 mb-2 tracking-tight">
           {sound.name}
         </h2>
-        {sound.nameAr && (
-          <p className="text-sm font-bold text-amber-200/80 font-cairo mb-3">
-            ({sound.nameAr})
-          </p>
-        )}
 
         {/* Live Audio Scope */}
         <div className="w-full max-w-sm my-2 relative">
@@ -175,20 +169,14 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
           />
         </div>
 
-        {/* Avatar & Big Mic Icon */}
-        <div className="my-3 flex items-center justify-center gap-4">
-          <CharacterAvatar
-            avatar={player?.avatar || '👑'}
-            name={player?.name || 'You'}
-            character={player?.character}
-            isTalking={micVolume > 0.08}
-            size="lg"
-          />
-
+        {/* Big Mic Status Visualizer */}
+        <div className="my-3 flex items-center justify-center">
           <div
             className={`w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-black flex items-center justify-center transition-all duration-200 shadow-[4px_4px_0px_#000] ${
               isCapturing
-                ? 'bg-gradient-to-br from-red-500 to-pink-600 scale-105 animate-pulse'
+                ? micVolume > 0.08
+                  ? 'bg-gradient-to-br from-emerald-400 to-cyan-400 scale-110 shadow-[0_0_20px_#10b981]'
+                  : 'bg-gradient-to-br from-red-500 to-pink-600 scale-105 animate-pulse'
                 : 'bg-emerald-500 text-black'
             }`}
           >
@@ -202,8 +190,8 @@ export default function Recorder({ sound, timer, player, onSubmitRecording }) {
 
         {/* Simple Large Countdown / Status */}
         {hasRecorded ? (
-          <div className="text-emerald-400 font-black text-base mt-2 flex items-center gap-2">
-            <span>✅ Recording submitted! Preparing reveals...</span>
+          <div className="text-emerald-400 font-black text-sm sm:text-base mt-2 flex items-center gap-2">
+            <span>✓ Recording submitted! Preparing reveals...</span>
           </div>
         ) : (
           <div className="mt-2 text-center">
