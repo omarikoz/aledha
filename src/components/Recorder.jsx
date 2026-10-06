@@ -204,7 +204,7 @@ export default function Recorder({ sound, timer, player, room, isMuted, onToggle
 
         {/* Sound Title */}
         <h2 className="text-2xl sm:text-3xl font-black text-amber-400 mb-2 tracking-tight">
-          {sound.name}
+          {sound?.name || 'Round Sound'}
         </h2>
 
         {/* Live Audio Scope */}

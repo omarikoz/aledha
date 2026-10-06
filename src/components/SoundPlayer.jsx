@@ -40,12 +40,12 @@ export default function SoundPlayer({ sound, round }) {
 
         {/* Sound Emoji Icon */}
         <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-slate-900 border-4 border-black shadow-[6px_6px_0px_#000] flex items-center justify-center text-5xl sm:text-6xl my-2">
-          {sound.emoji || '🔊'}
+          {sound?.emoji || '🔊'}
         </div>
 
         {/* Sound Title */}
         <h2 className="text-2xl sm:text-3xl font-black text-white mt-3 mb-2 tracking-tight">
-          {sound.name}
+          {sound?.name || 'Sound'}
         </h2>
 
         {/* Animated Audio Waves (No duration clocks or seconds remaining) */}

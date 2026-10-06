@@ -8,8 +8,8 @@ export default function Leaderboard({
   onAdvanceRound
 }) {
   const isHost = player?.isHost;
-  const currentRound = room.currentRound;
-  const totalRounds = room.totalRounds || room.settings?.rounds || 3;
+  const currentRound = room?.currentRound || 1;
+  const totalRounds = room?.totalRounds || room?.settings?.rounds || 3;
   const isFinalRound = currentRound >= totalRounds;
 
   // Server-authoritative timer to eliminate state desync & phase lag
@@ -20,7 +20,7 @@ export default function Leaderboard({
   }, []);
 
   // Sort players by total score descending
-  const sortedPlayers = [...(room.players || [])].sort((a, b) => b.score - a.score);
+  const sortedPlayers = [...(room?.players || [])].sort((a, b) => (b.score || 0) - (a.score || 0));
 
   return (
     <div className="w-full max-w-md mx-auto px-4 py-4 sm:py-6">

@@ -32,9 +32,6 @@ export default function Header({
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight text-white flex items-center gap-1.5">
               <span>Aledha</span>
-              <span className="text-[10px] sm:text-xs bg-amber-400 text-black font-extrabold px-2 py-0.5 rounded-full border border-black shadow-[1px_1px_0px_#000]">
-                Mimic It!
-              </span>
             </h1>
           </div>
           <p className="text-[11px] sm:text-xs text-amber-200/80 font-semibold hidden sm:block">

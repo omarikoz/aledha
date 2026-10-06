@@ -85,6 +85,42 @@ class AudioEngine {
     }
   }
 
+  // Decode Base64 dataUrl, ArrayBuffer or URL into AudioBuffer
+  async decodeAudio(audioSource) {
+    if (!audioSource) return null;
+    try {
+      const ctx = this.getAudioContext();
+      let arrayBuffer = null;
+      if (audioSource instanceof ArrayBuffer) {
+        arrayBuffer = audioSource;
+      } else if (typeof audioSource === 'string') {
+        if (audioSource.startsWith('data:')) {
+          const parts = audioSource.split(',');
+          const binary = atob(parts[1]);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          arrayBuffer = bytes.buffer;
+        } else {
+          const res = await fetch(audioSource);
+          arrayBuffer = await res.arrayBuffer();
+        }
+      }
+      if (!arrayBuffer) return null;
+      return await new Promise((resolve) => {
+        ctx.decodeAudioData(
+          arrayBuffer.slice(0),
+          (buf) => resolve(buf),
+          () => resolve(null)
+        );
+      });
+    } catch (e) {
+      console.warn('decodeAudio error:', e);
+      return null;
+    }
+  }
+
   // Ensure AudioContext is initialized and active
   getAudioContext() {
     if (!this.audioCtx) {

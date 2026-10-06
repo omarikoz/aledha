@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Volume2, Sparkles, Check, Users, Clock, Bot, Activity, Zap } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
