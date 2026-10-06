@@ -17,9 +17,19 @@ export default function App() {
   const [room, setRoom] = useState(null);
   const [player, setPlayer] = useState(null);
   const [localRecordedAudioUrl, setLocalRecordedAudioUrl] = useState(null);
+  const [revealAudioPayload, setRevealAudioPayload] = useState(null);
   const [isTesterOpen, setIsTesterOpen] = useState(false);
-
   const [micReady, setMicReady] = useState(() => audioEngine.isMicReady());
+  const [isMuted, setIsMuted] = useState(() => audioEngine.getMuted());
+
+  useEffect(() => {
+    return audioEngine.onMuteChange((muted) => setIsMuted(muted));
+  }, []);
+
+  const handleToggleMute = useCallback(() => {
+    const next = audioEngine.toggleMute();
+    setIsMuted(next);
+  }, []);
 
   // Function to request microphone permission explicitly and unlock audio context
   const handleRequestMic = async () => {
@@ -56,7 +66,7 @@ export default function App() {
     };
   }, []);
 
-  // Listen to P2P peer network updates (for GitHub Pages & Mobile WebRTC)
+  // Listen to P2P peer network updates & Socket.io events
   useEffect(() => {
     peerNetwork.onRoomUpdate((updatedRoom) => {
       setRoom(updatedRoom);
@@ -66,7 +76,26 @@ export default function App() {
       setPlayer(updatedPlayer);
     });
 
-    // Also support local Socket.io if running local server daemon
+    peerNetwork.onPhaseChange((data) => {
+      setRoom((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          state: data.phase || data.state,
+          revealPhase: data.revealPhase || prev.revealPhase,
+          revealIndex: data.revealIndex !== undefined ? data.revealIndex : prev.revealIndex,
+          timer: data.timer !== undefined ? data.timer : prev.timer,
+          currentRound: data.currentRound || prev.currentRound,
+          roundSound: data.roundSound || prev.roundSound
+        };
+      });
+    });
+
+    peerNetwork.onPlayPlayerReveal((data) => {
+      setRevealAudioPayload(data);
+    });
+
+    // Support local Socket.io if running local server daemon
     socket.on('room_update', (updatedRoom) => {
       if (!peerNetwork.roomId) {
         setRoom(updatedRoom);
@@ -75,6 +104,29 @@ export default function App() {
           if (me) setPlayer(me);
         }
       }
+    });
+
+    // Server-Authoritative phase_change event (Prevents desync / lag)
+    socket.on('phase_change', (data) => {
+      if (!peerNetwork.roomId) {
+        setRoom((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            state: data.phase || data.state,
+            revealPhase: data.revealPhase || prev.revealPhase,
+            revealIndex: data.revealIndex !== undefined ? data.revealIndex : prev.revealIndex,
+            timer: data.timer !== undefined ? data.timer : prev.timer,
+            currentRound: data.currentRound || prev.currentRound,
+            roundSound: data.roundSound || prev.roundSound
+          };
+        });
+      }
+    });
+
+    // Universal audio reveal event (All players receive and play simultaneously)
+    socket.on('play_player_reveal', (data) => {
+      setRevealAudioPayload(data);
     });
 
     socket.on('game_aborted', (data) => {
@@ -95,6 +147,8 @@ export default function App() {
 
     return () => {
       socket.off('room_update');
+      socket.off('phase_change');
+      socket.off('play_player_reveal');
       socket.off('game_aborted');
     };
   }, []);
@@ -243,6 +297,8 @@ export default function App() {
         micReady={micReady}
         onRequestMic={handleRequestMic}
         onOpenSoundTester={() => setIsTesterOpen(true)}
+        isMuted={isMuted}
+        onToggleMute={handleToggleMute}
       />
 
       {/* Main Game Screen depending on Room State */}
@@ -274,6 +330,8 @@ export default function App() {
             player={player}
             room={room}
             onSubmitRecording={handleSubmitRecording}
+            isMuted={isMuted}
+            onToggleMute={handleToggleMute}
           />
         ) : room.state === 'PROCESSING' ? (
           <div className="arcade-card text-center p-6 sm:p-8 max-w-sm sm:max-w-md mx-auto">
@@ -290,6 +348,7 @@ export default function App() {
             room={room}
             player={player}
             localRecordedAudioUrl={localRecordedAudioUrl}
+            revealAudioPayload={revealAudioPayload}
             onVote={handleVote}
           />
         ) : room.state === 'LEADERBOARD' ? (

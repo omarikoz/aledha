@@ -2,7 +2,15 @@ import React, { useState } from 'react';
 import { Volume2, Users, Copy, Check, Sparkles, Music } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
-export default function Header({ room, player, micReady, onRequestMic, onOpenSoundTester }) {
+export default function Header({
+  room,
+  player,
+  micReady,
+  onRequestMic,
+  onOpenSoundTester,
+  isMuted = false,
+  onToggleMute
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopyCode = () => {
@@ -58,13 +66,28 @@ export default function Header({ room, player, micReady, onRequestMic, onOpenSou
 
       {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Persistent Global Mute Button (Emergency Mic Mute) */}
+        <button
+          type="button"
+          onClick={onToggleMute}
+          title={isMuted ? "Microphone is MUTED (Click to unmute)" : "Mute Microphone (Emergency Mute)"}
+          className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border-2 font-black text-xs sm:text-sm transition shadow-[2px_2px_0px_#000] active:scale-95 ${
+            isMuted
+              ? 'bg-red-600 hover:bg-red-500 text-white border-red-900 shadow-[0_0_12px_rgba(239,68,68,0.7)] animate-pulse'
+              : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-black'
+          }`}
+        >
+          <span>{isMuted ? '🔇' : '🎙️'}</span>
+          <span>{isMuted ? 'Muted' : 'Mute'}</span>
+        </button>
+
         {micReady ? (
           <span
             title="Microphone is ready"
             className="inline-flex items-center gap-1 bg-slate-900/90 border-2 border-black px-2 sm:px-2.5 py-1 rounded-xl shadow-[2px_2px_0px_#000] text-[11px] sm:text-xs font-bold text-emerald-400"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>✓ Mic Ready</span>
+            <span>✓ Ready</span>
           </span>
         ) : (
           <button

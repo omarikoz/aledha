@@ -3,7 +3,7 @@ import { Mic, CheckCircle2, AlertCircle } from 'lucide-react';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
-export default function Recorder({ sound, timer, player, room, onSubmitRecording }) {
+export default function Recorder({ sound, timer, player, room, isMuted, onToggleMute, onSubmitRecording }) {
   const [micVolume, setMicVolume] = useState(0);
   const [isCapturing, setIsCapturing] = useState(false);
   const [hasRecorded, setHasRecorded] = useState(false);
@@ -174,11 +174,33 @@ export default function Recorder({ sound, timer, player, room, onSubmitRecording
       className="w-full max-w-md mx-auto px-4 py-4 sm:py-6 text-center select-none"
     >
       <div className="arcade-card relative overflow-hidden flex flex-col items-center">
-        {/* Clean Pulsing Recording Badge (No Mimic It text) */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm mb-3 animate-pulse">
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
-          <span>🔴 RECORDING AUDIO</span>
+        {/* Clean Pulsing Recording Badge */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-500/20 border-2 border-red-500 text-red-400 font-extrabold text-xs sm:text-sm animate-pulse">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+            <span>🔴 RECORDING AUDIO</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={onToggleMute}
+            className={`px-3 py-1 rounded-full text-xs font-black border-2 transition shadow-[1px_1px_0px_#000] ${
+              isMuted
+                ? 'bg-red-600 text-white border-red-900 animate-pulse'
+                : 'bg-slate-900 text-slate-300 border-black hover:bg-slate-800'
+            }`}
+          >
+            {isMuted ? '🔇 Muted' : '🎙️ Mute'}
+          </button>
         </div>
+
+        {/* Emergency Mute Active Alert Banner */}
+        {isMuted && (
+          <div className="w-full max-w-sm mb-2 p-2 bg-red-950/80 border-2 border-red-500 rounded-xl text-red-200 text-xs font-black animate-pulse flex items-center justify-center gap-2">
+            <span>🔇 MIC MUTED</span>
+            <span>— Capturing zero amplitude silence</span>
+          </div>
+        )}
 
         {/* Sound Title */}
         <h2 className="text-2xl sm:text-3xl font-black text-amber-400 mb-2 tracking-tight">

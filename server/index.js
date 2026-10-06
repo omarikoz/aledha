@@ -55,10 +55,11 @@ function generateRoomCode() {
 // In-Memory Rooms State
 const rooms = new Map();
 
-// Helper to broadcast room state to all sockets in room
+// Helper to broadcast room state and phase change to all sockets in room
 function broadcastRoom(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
+  const currentRec = room.recordings ? room.recordings[room.revealIndex] : null;
   io.to(roomId).emit('room_update', {
     id: room.id,
     hostId: room.hostId,
@@ -72,6 +73,20 @@ function broadcastRoom(roomId) {
     recordings: room.recordings,
     revealIndex: room.revealIndex,
     timer: room.timer,
+    abortReason: room.abortReason || null
+  });
+
+  // Server-Authoritative Phase Change Event
+  io.to(roomId).emit('phase_change', {
+    phase: room.state,
+    state: room.state,
+    revealPhase: room.revealPhase,
+    activePlayerId: currentRec?.playerId || null,
+    revealIndex: room.revealIndex,
+    timer: room.timer,
+    currentRound: room.currentRound,
+    totalRounds: room.settings.rounds,
+    roundSound: room.roundSound,
     abortReason: room.abortReason || null
   });
 }
@@ -184,6 +199,15 @@ function startContestantVoting(room, index) {
   room.revealPhase = 'PLAYING';
   room.timer = 0;
   broadcastRoom(room.id);
+
+  // CRITICAL FIX: Broadcast play_player_reveal to ALL players (including active contestant)
+  const contestantAudioData = currentRec.audioData || currentRec.audioDataUrl || currentRec.recordedAudioUrl;
+  io.to(room.id).emit('play_player_reveal', {
+    playerId: currentRec.playerId,
+    playerName: currentRec.playerName,
+    audioData: contestantAudioData,
+    mimeType: currentRec.mimeType || 'audio/webm'
+  });
 
   runCountdown(room, 3, null, () => {
     if (isAiMode) {

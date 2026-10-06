@@ -7,6 +7,82 @@ class AudioEngine {
     this.analyser = null;
     this.mediaRecorder = null;
     this.recordedChunks = [];
+    this.isMuted = false;
+    this.onMuteChangeCallbacks = new Set();
+  }
+
+  // Set Muted State (Emergency Mic Mute)
+  setMuted(muted) {
+    this.isMuted = !!muted;
+    if (this.micStream) {
+      try {
+        this.micStream.getAudioTracks().forEach((track) => {
+          track.enabled = !this.isMuted;
+        });
+      } catch (e) {
+        console.warn('Error setting track enabled:', e);
+      }
+    }
+    this.onMuteChangeCallbacks.forEach((cb) => {
+      try { cb(this.isMuted); } catch (e) {}
+    });
+  }
+
+  toggleMute() {
+    this.setMuted(!this.isMuted);
+    return this.isMuted;
+  }
+
+  getMuted() {
+    return this.isMuted;
+  }
+
+  onMuteChange(cb) {
+    this.onMuteChangeCallbacks.add(cb);
+    return () => this.onMuteChangeCallbacks.delete(cb);
+  }
+
+  // Convert Base64 audioData into a Blob URL and play with new Audio()
+  playAudioData(audioData, mimeType = 'audio/webm', onEnded) {
+    if (!audioData) return null;
+    try {
+      let raw = audioData;
+      let type = mimeType || 'audio/webm';
+      if (typeof audioData === 'string' && audioData.startsWith('data:')) {
+        const parts = audioData.split(',');
+        const m = parts[0].match(/:(.*?);/);
+        if (m && m[1]) type = m[1];
+        raw = parts[1];
+      }
+      const binary = atob(raw);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type });
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      audio.volume = 1.0;
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => console.error("Playback error:", err));
+      }
+      const cleanup = () => {
+        try {
+          audio.pause();
+          audio.src = '';
+          URL.revokeObjectURL(audioUrl);
+        } catch (e) {}
+        if (onEnded) onEnded();
+      };
+      audio.onended = cleanup;
+      audio.onerror = cleanup;
+      return { audio, audioUrl, cleanup };
+    } catch (err) {
+      console.error("playAudioData error:", err);
+      return null;
+    }
   }
 
   // Ensure AudioContext is initialized and active
@@ -42,7 +118,9 @@ class AudioEngine {
       this.unlockAudioContext();
       if (this.isMicReady()) {
         try {
-          this.micStream.getAudioTracks().forEach((t) => { t.enabled = true; });
+          this.micStream.getAudioTracks().forEach((t) => {
+            t.enabled = !this.isMuted;
+          });
         } catch (e) {}
         this.setupAnalyser(this.micStream);
         return this.micStream;
@@ -51,6 +129,9 @@ class AudioEngine {
       // Universal audio constraint for mobile & desktop
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.micStream = stream;
+      if (this.isMuted) {
+        stream.getAudioTracks().forEach((t) => { t.enabled = false; });
+      }
       this.setupAnalyser(stream);
       return stream;
     } catch (err) {
@@ -201,6 +282,14 @@ class AudioEngine {
             if (!isCapturing) return;
             const input = e.inputBuffer.getChannelData(0);
             const copy = new Float32Array(input.length);
+            if (this.isMuted) {
+              // Emergency Mute: zero amplitude silence is recorded
+              copy.fill(0);
+              pcmChunks.push(copy);
+              totalPcmSamples += input.length;
+              if (onVolumeUpdate) onVolumeUpdate(0);
+              return;
+            }
             copy.set(input);
             pcmChunks.push(copy);
             totalPcmSamples += input.length;

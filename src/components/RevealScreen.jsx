@@ -7,6 +7,7 @@ export default function RevealScreen({
   room,
   player,
   localRecordedAudioUrl,
+  revealAudioPayload,
   onVote
 }) {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
@@ -25,10 +26,16 @@ export default function RevealScreen({
 
   // Active contestant info & broadcasted audio source
   const isCurrentUser = currentRec?.playerId === player?.id;
-  const rawAudioSource = currentRec?.audioData
-    || currentRec?.audioDataUrl
-    || currentRec?.recordedAudioUrl
-    || (isCurrentUser ? localRecordedAudioUrl : null);
+  const isPayloadForThisContestant = revealAudioPayload && (!currentRec || revealAudioPayload.playerId === currentRec.playerId);
+  const rawAudioSource = (isPayloadForThisContestant && revealAudioPayload.audioData)
+    ? revealAudioPayload.audioData
+    : (currentRec?.audioData
+       || currentRec?.audioDataUrl
+       || currentRec?.recordedAudioUrl
+       || (isCurrentUser ? localRecordedAudioUrl : null));
+  const rawMimeType = (isPayloadForThisContestant && revealAudioPayload.mimeType)
+    ? revealAudioPayload.mimeType
+    : (currentRec?.mimeType || 'audio/webm');
 
   // Reset vote state when contestant changes
   useEffect(() => {
@@ -72,11 +79,9 @@ export default function RevealScreen({
     return () => { isMounted = false; };
   }, [isAiMode, currentRec?.playerId, rawAudioSource, room?.roundSound]);
 
-  // Synchronized audio broadcast playback: Play contestant take to EVERYONE in the room
-  useEffect(() => {
-    setIsPlayingAudio(false);
-    let activeBlobUrl = null;
-
+  // Universal Client Playback (Everyone hears every player, including self)
+  const playAudio = useCallback((source, mime) => {
+    if (!source) return;
     if (audioRef.current) {
       try {
         audioRef.current.pause();
@@ -85,47 +90,69 @@ export default function RevealScreen({
       audioRef.current = null;
     }
 
-    if (rawAudioSource) {
-      try {
-        let playUrl = rawAudioSource;
+    try {
+      let playUrl = source;
+      let blobUrlToRevoke = null;
 
-        // Convert Base64 data string to local Blob URL for universal audio decoder support
-        if (typeof rawAudioSource === 'string' && rawAudioSource.startsWith('data:')) {
-          try {
-            const parts = rawAudioSource.split(',');
-            const mime = parts[0].match(/:(.*?);/)?.[1] || 'audio/webm';
-            const bstr = atob(parts[1]);
-            let n = bstr.length;
-            const u8arr = new Uint8Array(n);
-            while (n--) {
-              u8arr[n] = bstr.charCodeAt(n);
-            }
-            const blob = new Blob([u8arr], { type: mime });
-            activeBlobUrl = URL.createObjectURL(blob);
-            playUrl = activeBlobUrl;
-          } catch (convErr) {
-            playUrl = rawAudioSource;
+      // Ensure Base64 strings are converted to standard Blob URLs
+      if (typeof source === 'string' && (source.startsWith('data:') || !source.startsWith('blob:'))) {
+        try {
+          let base64 = source;
+          let effectiveMime = mime || 'audio/webm';
+          if (source.startsWith('data:')) {
+            const parts = source.split(',');
+            const m = parts[0].match(/:(.*?);/);
+            if (m && m[1]) effectiveMime = m[1];
+            base64 = parts[1];
           }
+          const binary = atob(base64);
+          const len = binary.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const audioBlob = new Blob([bytes], { type: effectiveMime });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          blobUrlToRevoke = audioUrl;
+          playUrl = audioUrl;
+        } catch (convErr) {
+          console.warn('Base64 decode error:', convErr);
+          playUrl = source;
         }
-
-        const audio = new Audio(playUrl);
-        audio.volume = 1.0;
-        audioRef.current = audio;
-        setIsPlayingAudio(true);
-
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((e) => {
-            console.warn('Audio playback error on contestant take:', e);
-            setIsPlayingAudio(false);
-          });
-        }
-
-        audio.onended = () => setIsPlayingAudio(false);
-        audio.onerror = () => setIsPlayingAudio(false);
-      } catch (e) {
-        setIsPlayingAudio(false);
       }
+
+      const revealAudio = new Audio(playUrl);
+      revealAudio.volume = 1.0;
+      audioRef.current = revealAudio;
+      setIsPlayingAudio(true);
+
+      const playPromise = revealAudio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.error("Playback error:", err);
+          setIsPlayingAudio(false);
+        });
+      }
+
+      const cleanup = () => {
+        setIsPlayingAudio(false);
+        if (blobUrlToRevoke) {
+          try { URL.revokeObjectURL(blobUrlToRevoke); } catch (e) {}
+        }
+      };
+
+      revealAudio.onended = cleanup;
+      revealAudio.onerror = cleanup;
+    } catch (err) {
+      console.error("Universal playback error:", err);
+      setIsPlayingAudio(false);
+    }
+  }, []);
+
+  // Synchronized audio broadcast playback: Play contestant take to EVERYONE in the room
+  useEffect(() => {
+    if (rawAudioSource) {
+      playAudio(rawAudioSource, rawMimeType);
     }
 
     return () => {
@@ -137,11 +164,8 @@ export default function RevealScreen({
         } catch (e) {}
         audioRef.current = null;
       }
-      if (activeBlobUrl) {
-        try { URL.revokeObjectURL(activeBlobUrl); } catch (e) {}
-      }
     };
-  }, [revealIndex, rawAudioSource]);
+  }, [revealIndex, currentRec?.playerId, rawAudioSource, rawMimeType, revealAudioPayload, playAudio]);
 
   const handleCastVote = () => {
     if (hasVoted || isCurrentUser || isAiMode) return;
@@ -230,24 +254,37 @@ export default function RevealScreen({
           </div>
         </div>
 
-        {/* Animated Soundwave Indicator while playing */}
-        <div className="flex items-center justify-center gap-1.5 h-12 w-full max-w-xs mx-auto bg-slate-950/80 rounded-2xl border-2 border-black p-2.5">
-          {isPlayingAudio ? (
-            Array.from({ length: 14 }).map((_, i) => (
-              <div
-                key={i}
-                className="w-1.5 bg-gradient-to-t from-cyan-400 to-amber-400 rounded-full animate-pulse"
-                style={{
-                  height: `${Math.max(25, Math.sin(i * 0.8 + Date.now() / 180) * 80 + 20)}%`,
-                  animationDelay: `${i * 60}ms`
-                }}
-              />
-            ))
-          ) : (
-            <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
-              <Volume2 size={16} className="text-slate-500" />
-              <span>Voice Take Finished</span>
-            </div>
+        {/* Animated Soundwave Indicator & Replay Button */}
+        <div className="flex items-center justify-between gap-2 h-12 w-full max-w-xs mx-auto bg-slate-950/80 rounded-2xl border-2 border-black p-2.5 px-3">
+          <div className="flex items-center gap-1.5 flex-1 justify-center">
+            {isPlayingAudio ? (
+              Array.from({ length: 14 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-1.5 bg-gradient-to-t from-cyan-400 to-amber-400 rounded-full animate-pulse"
+                  style={{
+                    height: `${Math.max(25, Math.sin(i * 0.8 + Date.now() / 180) * 80 + 20)}%`,
+                    animationDelay: `${i * 60}ms`
+                  }}
+                />
+              ))
+            ) : (
+              <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                <Volume2 size={16} className="text-slate-500" />
+                <span>Voice Take Finished</span>
+              </div>
+            )}
+          </div>
+
+          {rawAudioSource && (
+            <button
+              type="button"
+              onClick={() => playAudio(rawAudioSource, rawMimeType)}
+              title="Replay Voice Take"
+              className="inline-flex items-center gap-1 bg-amber-400 hover:bg-amber-300 text-black px-2.5 py-1 rounded-xl font-black text-xs transition active:scale-95 shadow-[1px_1px_0px_#000] shrink-0"
+            >
+              <span>▶ Replay</span>
+            </button>
           )}
         </div>
 

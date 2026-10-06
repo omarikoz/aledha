@@ -12,23 +12,11 @@ export default function Leaderboard({
   const totalRounds = room.totalRounds || room.settings?.rounds || 3;
   const isFinalRound = currentRound >= totalRounds;
 
-  const [countdown, setCountdown] = useState(5.0);
+  // Server-authoritative timer to eliminate state desync & phase lag
+  const serverTimer = room?.timer !== undefined ? room.timer : 4;
 
   useEffect(() => {
     soundSynthesizer.playUiSound('fanfare');
-
-    const startTime = Date.now();
-    const durationMs = 4000;
-    const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, (durationMs - elapsed) / 1000);
-      setCountdown(remaining);
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
   }, []);
 
   // Sort players by total score descending
@@ -110,12 +98,12 @@ export default function Leaderboard({
                 ? 'Revealing Final Match Winner...'
                 : `Round ${currentRound + 1} starting automatically...`}
             </span>
-            <span className="text-amber-400 font-mono">{Math.ceil(countdown)}s</span>
+            <span className="text-amber-400 font-mono">{Math.max(0, serverTimer)}s</span>
           </div>
           <div className="w-full h-2 bg-slate-950 rounded-full border border-black overflow-hidden mb-3">
             <div
-              className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-100 ease-linear"
-              style={{ width: `${Math.min(100, Math.max(0, ((5.0 - countdown) / 5.0) * 100))}%` }}
+              className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-300 ease-linear"
+              style={{ width: `${Math.min(100, Math.max(0, ((4.0 - serverTimer) / 4.0) * 100))}%` }}
             />
           </div>
 

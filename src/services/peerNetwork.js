@@ -18,6 +18,8 @@ class PeerNetwork {
     this.onRoomUpdateCallback = null;
     this.onPlayerUpdateCallback = null;
     this.timerInterval = null;
+    this.onPlayPlayerRevealCallback = null;
+    this.onPhaseChangeCallback = null;
   }
 
   onRoomUpdate(callback) {
@@ -30,14 +32,42 @@ class PeerNetwork {
     if (this.localPlayer && callback) callback(this.localPlayer);
   }
 
+  onPlayPlayerReveal(callback) {
+    this.onPlayPlayerRevealCallback = callback;
+  }
+
+  onPhaseChange(callback) {
+    this.onPhaseChangeCallback = callback;
+  }
+
   notifyRoomUpdate() {
     if (!this.room) return;
     const cloned = JSON.parse(JSON.stringify(this.room));
     if (this.onRoomUpdateCallback) this.onRoomUpdateCallback(cloned);
 
+    const currentRec = this.room.recordings ? this.room.recordings[this.room.revealIndex] : null;
+    const phasePayload = {
+      type: 'PHASE_CHANGE',
+      phase: this.room.state,
+      state: this.room.state,
+      revealPhase: this.room.revealPhase,
+      activePlayerId: currentRec?.playerId || null,
+      revealIndex: this.room.revealIndex,
+      timer: this.room.timer,
+      currentRound: this.room.currentRound,
+      totalRounds: this.room.totalRounds || this.room.settings.rounds,
+      roundSound: this.room.roundSound,
+      abortReason: this.room.abortReason || null
+    };
+
+    if (this.onPhaseChangeCallback) {
+      this.onPhaseChangeCallback(phasePayload);
+    }
+
     // If host, broadcast room state to all connected guests
     if (this.isHost) {
       this.broadcastToGuests({ type: 'ROOM_UPDATE', room: cloned });
+      this.broadcastToGuests(phasePayload);
     }
   }
 
@@ -326,6 +356,14 @@ class PeerNetwork {
                 }
               }
               if (this.onRoomUpdateCallback) this.onRoomUpdateCallback(this.room);
+            } else if (data.type === 'PLAY_PLAYER_REVEAL') {
+              if (this.onPlayPlayerRevealCallback) {
+                this.onPlayPlayerRevealCallback(data);
+              }
+            } else if (data.type === 'PHASE_CHANGE') {
+              if (this.onPhaseChangeCallback) {
+                this.onPhaseChangeCallback(data);
+              }
             }
           } catch (e) {
             console.error('Failed to parse host message:', e);
@@ -549,6 +587,21 @@ class PeerNetwork {
     this.room.revealPhase = 'PLAYING';
     this.room.timer = 0;
     this.notifyRoomUpdate();
+
+    const contestantAudioData = currentRec.audioData || currentRec.audioDataUrl || currentRec.recordedAudioUrl;
+    const revealPayload = {
+      type: 'PLAY_PLAYER_REVEAL',
+      playerId: currentRec.playerId,
+      playerName: currentRec.playerName,
+      audioData: contestantAudioData,
+      mimeType: currentRec.mimeType || 'audio/webm'
+    };
+    if (this.onPlayPlayerRevealCallback) {
+      this.onPlayPlayerRevealCallback(revealPayload);
+    }
+    if (this.isHost) {
+      this.broadcastToGuests(revealPayload);
+    }
 
     this.runCountdown(3, null, () => {
       if (isAiMode) {
