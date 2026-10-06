@@ -1,0 +1,182 @@
+[
+  {
+    "id": "pack_1",
+    "packNumber": 1,
+    "title": "Sound Pack 1",
+    "name": "Magyar",
+    "description": "Authentic Egyptian viral street memes, legendary screams, and festival vocals.",
+    "emoji": "🔥",
+    "requiresPin": true,
+    "pinCode": "1535",
+    "sounds": [
+      {
+        "id": "meme_scream_faah",
+        "name": "Dramatic Arabic Scream (فااااااه!)",
+        "nameAr": "صرخة درامية فاااااه",
+        "category": "screams",
+        "categoryName": "Memes & Screams",
+        "file": "/sounds/tiktok_memeffectt_7599583357487336712_audio_original.mp3",
+        "duration": 2.5,
+        "difficulty": "easy",
+        "emoji": "😱",
+        "hint": "Scream 'FAAAAH!' from the bottom of your lungs with sudden cut-off!"
+      },
+      {
+        "id": "meme_stutter_ay",
+        "name": "Stuttering Ay Ay Ay Cry-Laugh (اي اي اي!)",
+        "nameAr": "اي اي اي اي الضحكة الهستيرية",
+        "category": "laughs",
+        "categoryName": "Funny Reactions",
+        "file": "/sounds/tiktok_vanitas_marlen_7501725967757413654_audio_original.mp3",
+        "duration": 2.2,
+        "difficulty": "medium",
+        "emoji": "😭",
+        "hint": "Rapid-fire crying stutter: 'Ay-ay-ay-ay-ay!' at high speed!"
+      },
+      {
+        "id": "meme_victory_roar",
+        "name": "Legendary Victory Roar (اوووووو!)",
+        "nameAr": "صرخة النصر اوووووو",
+        "category": "hype",
+        "categoryName": "Hype & Energy",
+        "file": "/sounds/tiktok_user_viip_7488804285245902087_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "easy",
+        "emoji": "🦁",
+        "hint": "Deep resonant chest roar: 'OOOOOOHHHHH' with sustained energy!"
+      },
+      {
+        "id": "meme_yekhreb_betha",
+        "name": "Yekhreb Betha Comedy Rant (يخرب بيتها!)",
+        "nameAr": "سيبت اللي بحبها يخرب بيتها",
+        "category": "comedy",
+        "categoryName": "Egyptian Dialogue",
+        "file": "/sounds/tiktok_sandra68593_7649639726403652884_audio_original.mp3",
+        "duration": 5.5,
+        "difficulty": "hard",
+        "emoji": "💔",
+        "hint": "Dramatic Egyptian broken-heart comedy: 'Seyebt elly bahebbaha yekhreb betha!'"
+      },
+      {
+        "id": "meme_ana_hawareek",
+        "name": "Ana Hawareek Threat Meme (أنا حوريك!)",
+        "nameAr": "أنا حوريك يا فنان",
+        "category": "comedy",
+        "categoryName": "Egyptian Dialogue",
+        "file": "/sounds/tiktok_sandra68593_7649906078112566548_audio_original.mp3",
+        "duration": 4.5,
+        "difficulty": "medium",
+        "emoji": "😤",
+        "hint": "Angry high-pitched Egyptian threat with nasal comedy tone!"
+      },
+      {
+        "id": "meme_samba_rant",
+        "name": "3andak Samba Street Rant (عندك سامبا!)",
+        "nameAr": "عندك سامبا يا معلم",
+        "category": "comedy",
+        "categoryName": "Egyptian Dialogue",
+        "file": "/sounds/tiktok_mourtadabouguider_7091343694602816774_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "medium",
+        "emoji": "💃",
+        "hint": "Repetitive rhythmic chant: '3andak Samba.. 3andak Samba!'"
+      },
+      {
+        "id": "meme_mahraganat_magala",
+        "name": "Mahraganat Magala Chant (مجالا مجالا!)",
+        "nameAr": "هتاف مجالا مجالا الشعبي",
+        "category": "music",
+        "categoryName": "Shaabi & Music",
+        "file": "/sounds/tiktok_sandra68593_7674006565745102100_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "hard",
+        "emoji": "🎤",
+        "hint": "Street festival hype vocal chant: 'Magala.. Magala.. Magala!'"
+      },
+      {
+        "id": "meme_gaaed_reaction",
+        "name": "Gaaed Reaction Gasp (كاعد!)",
+        "nameAr": "ريأكشن كاعد",
+        "category": "laughs",
+        "categoryName": "Funny Reactions",
+        "file": "/sounds/tiktok_abrillyaclarista_7369431847895321863_audio_original.mp3",
+        "duration": 4.0,
+        "difficulty": "easy",
+        "emoji": "👀",
+        "hint": "Surprised sudden vocal reaction with abrupt ending!"
+      },
+      {
+        "id": "meme_elkown_monologue",
+        "name": "El-Kown Street Monologue (الكون أسمعنا)",
+        "nameAr": "مونولوج الكون الشعبي",
+        "category": "comedy",
+        "categoryName": "Egyptian Dialogue",
+        "file": "/sounds/tiktok_v.memes1_7318905059373354245_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "hard",
+        "emoji": "🌌",
+        "hint": "Rapid street philosopher delivery with authentic Cairo slang!"
+      },
+      {
+        "id": "meme_hal_toreedoka",
+        "name": "Hal Toreedoka Question Meme (هل تريدك؟)",
+        "nameAr": "هل تريدك؟",
+        "category": "comedy",
+        "categoryName": "Egyptian Dialogue",
+        "file": "/sounds/tiktok_user1608082561831_7677966101258587413_audio_original.mp3",
+        "duration": 4.5,
+        "difficulty": "medium",
+        "emoji": "🧐",
+        "hint": "Formal pompous theatrical delivery: 'Hal Toreeeedoka?!'"
+      },
+      {
+        "id": "meme_atda3eek_challenge",
+        "name": "Ana Atda3eek Sched Challenge (أنا أتدعيك!)",
+        "nameAr": "أنا أتدعيك صرخة التحدي",
+        "category": "screams",
+        "categoryName": "Memes & Screams",
+        "file": "/sounds/tiktok_erabii_7128214179822980357_audio_original.mp3",
+        "duration": 5.5,
+        "difficulty": "hard",
+        "emoji": "🔥",
+        "hint": "Hysterical high-tempo battle chant: 'Ana atda3eek! Atda3eek!'"
+      },
+      {
+        "id": "meme_number1_chant",
+        "name": "Number 1 Challenge Rap (نمبر وان!)",
+        "nameAr": "هتاف نمبر وان المصري",
+        "category": "music",
+        "categoryName": "Shaabi & Music",
+        "file": "/sounds/tiktok_a1.number1_7648163369232502037_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "medium",
+        "emoji": "🥇",
+        "hint": "Aggressive energetic cadence: 'Number One, ana el-batal!'"
+      },
+      {
+        "id": "meme_ayna_search",
+        "name": "Ayna Ayna Theatrical Search (أين أين أين!)",
+        "nameAr": "أين أين يا معلم",
+        "category": "comedy",
+        "categoryName": "Egyptian Dialogue",
+        "file": "/sounds/tiktok_sandra68593_7649605776645950740_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "medium",
+        "emoji": "🔍",
+        "hint": "Panicked rhythmic search: 'Ayna.. ayna.. ayna?!'"
+      },
+      {
+        "id": "meme_krypton_vibez",
+        "name": "Krypton Beat & Hype Shout (كريبتون فايبز)",
+        "nameAr": "إيقاع كريبتون فايبز",
+        "category": "hype",
+        "categoryName": "Hype & Energy",
+        "file": "/sounds/tiktok_krypton.vibez_7666021917484240136_audio_original.mp3",
+        "duration": 5.0,
+        "difficulty": "easy",
+        "emoji": "🎧",
+        "hint": "Rhythmic beatbox and bassline groove with energetic intro!"
+      }
+    ]
+  }
+]

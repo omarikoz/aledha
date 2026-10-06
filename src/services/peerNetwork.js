@@ -3,6 +3,7 @@
 
 import { Peer } from 'peerjs';
 import soundsCatalog from '../data/sounds.json';
+import soundPacksData from '../data/soundPacks.json';
 
 const ROOM_PREFIX = 'ALEDHA-';
 
@@ -146,7 +147,8 @@ class PeerNetwork {
       settings: {
         rounds: settings?.rounds || 3,
         category: settings?.category || 'all',
-        gameMode: settings?.gameMode || 'player'
+        gameMode: settings?.gameMode || 'player',
+        soundPack: settings?.soundPack || 'pack_1'
       },
       currentRound: 1,
       totalRounds: settings?.rounds || 3,
@@ -431,10 +433,14 @@ class PeerNetwork {
     if (!this.isHost || !this.room) return;
     if (this.timerInterval) clearInterval(this.timerInterval);
 
-    const filtered = this.room.settings.category === 'all'
-      ? soundsCatalog
-      : soundsCatalog.filter(s => s.category === this.room.settings.category);
-    const pool = filtered.length > 0 ? filtered : soundsCatalog;
+    const activePackId = this.room.settings?.soundPack || 'pack_1';
+    const activePack = soundPacksData.find((p) => p.id === activePackId) || soundPacksData[0];
+    const packSounds = activePack?.sounds && activePack.sounds.length > 0 ? activePack.sounds : soundsCatalog;
+
+    const filtered = (!this.room.settings?.category || this.room.settings.category === 'all')
+      ? packSounds
+      : packSounds.filter((s) => s.category === this.room.settings.category);
+    const pool = filtered.length > 0 ? filtered : packSounds;
     const sound = pool[Math.floor(Math.random() * pool.length)];
 
     this.room.roundSound = sound;

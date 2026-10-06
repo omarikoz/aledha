@@ -29,14 +29,35 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
-// Load sounds catalog
+// Load sound packs catalog (Pack 1: Magyar PIN-protected)
+let soundPacksCatalog = [];
 let soundsCatalog = [];
 try {
-  const soundsPath = path.join(__dirname, '../src/data/sounds.json');
-  soundsCatalog = JSON.parse(fs.readFileSync(soundsPath, 'utf8'));
+  const packsPath = path.join(__dirname, '../src/data/soundPacks.json');
+  if (fs.existsSync(packsPath)) {
+    soundPacksCatalog = JSON.parse(fs.readFileSync(packsPath, 'utf8'));
+    soundsCatalog = soundPacksCatalog[0]?.sounds || [];
+  } else {
+    const soundsPath = path.join(__dirname, '../src/data/sounds.json');
+    soundsCatalog = JSON.parse(fs.readFileSync(soundsPath, 'utf8'));
+  }
 } catch (e) {
-  console.error('Error loading sounds.json:', e);
+  console.error('Error loading soundPacks.json:', e);
 }
+
+app.get('/api/sound-packs', (req, res) => {
+  const safePacks = soundPacksCatalog.map((p) => ({
+    id: p.id,
+    packNumber: p.packNumber,
+    title: p.title,
+    name: p.name,
+    description: p.description,
+    emoji: p.emoji,
+    requiresPin: p.requiresPin,
+    soundCount: p.sounds?.length || 0
+  }));
+  res.json(safePacks);
+});
 
 app.get('/api/sounds', (req, res) => {
   res.json(soundsCatalog);
@@ -117,10 +138,14 @@ function startRound(room) {
   if (room.revealTimer) clearTimeout(room.revealTimer);
   if (room.timerInterval) clearInterval(room.timerInterval);
 
-  const filteredSounds = room.settings.category === 'all'
-    ? soundsCatalog
-    : soundsCatalog.filter(s => s.category === room.settings.category);
-  const soundPool = filteredSounds.length > 0 ? filteredSounds : soundsCatalog;
+  const activePackId = room.settings?.soundPack || 'pack_1';
+  const activePack = soundPacksCatalog.find((p) => p.id === activePackId) || soundPacksCatalog[0];
+  const packSounds = activePack?.sounds && activePack.sounds.length > 0 ? activePack.sounds : soundsCatalog;
+
+  const filteredSounds = (!room.settings?.category || room.settings.category === 'all')
+    ? packSounds
+    : packSounds.filter((s) => s.category === room.settings.category);
+  const soundPool = filteredSounds.length > 0 ? filteredSounds : packSounds;
 
   const sound = soundPool[Math.floor(Math.random() * soundPool.length)];
 
@@ -325,7 +350,8 @@ io.on('connection', (socket) => {
         rounds: settings?.rounds || 3,
         duration: settings?.duration || 3.5,
         category: settings?.category || 'all',
-        gameMode: settings?.gameMode || 'player'
+        gameMode: settings?.gameMode || 'player',
+        soundPack: settings?.soundPack || 'pack_1'
       },
       currentRound: 1,
       roundSound: null,

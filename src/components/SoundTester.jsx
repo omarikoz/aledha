@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Volume2, Mic, Play, Pause, Activity, Sparkles } from 'lucide-react';
+import { X, Volume2, Mic, Play, Pause, Activity, Sparkles, Lock, Package } from 'lucide-react';
 import soundsData from '../data/sounds.json';
+import { soundPackManager } from '../services/soundPackManager.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
 
@@ -10,6 +11,9 @@ export default function SoundTester({ isOpen, onClose }) {
   const [micLevel, setMicLevel] = useState(0);
 
   if (!isOpen) return null;
+
+  const activePack = soundPackManager.getPackById('pack_1');
+  const soundsList = activePack?.sounds || soundsData;
 
   const handlePlaySound = (sound) => {
     soundSynthesizer.playUiSound('click');
@@ -111,9 +115,23 @@ export default function SoundTester({ isOpen, onClose }) {
           </div>
         </div>
 
+        {/* Active Sound Pack Banner */}
+        <div className="flex items-center justify-between p-2.5 px-3 rounded-xl bg-slate-900 border border-white/10 mb-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{activePack.emoji || '🔥'}</span>
+            <div>
+              <span className="font-black text-white">{activePack.title}: {activePack.name}</span>
+              <span className="text-[10px] text-slate-400 block">{soundsList.length} Viral Audio Clips</span>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <Lock size={10} /> PIN: {activePack.pinCode}
+          </span>
+        </div>
+
         {/* Sounds List Scrollable */}
         <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-          {soundsData.map((s) => (
+          {soundsList.map((s) => (
             <div
               key={s.id}
               className="flex items-center justify-between p-3 rounded-2xl bg-slate-900/90 border-2 border-black shadow-[2px_2px_0px_#000]"

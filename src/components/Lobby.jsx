@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Crown, Play, Settings, Copy, Check, Bot } from 'lucide-react';
+import { Users, Crown, Play, Settings, Copy, Check, Bot, Package, Lock } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
+import { soundPackManager } from '../services/soundPackManager.js';
+import SoundPackModal from './SoundPackModal.jsx';
 
 export default function Lobby({
   room,
@@ -20,6 +22,7 @@ export default function Lobby({
   const [copied, setCopied] = useState(false);
   const [testingMic, setTestingMic] = useState(false);
   const [micVerified, setMicVerified] = useState(() => audioEngine.isMicReady() || !!micReady);
+  const [isPackModalOpen, setIsPackModalOpen] = useState(false);
 
   useEffect(() => {
     if (micReady) {
@@ -380,6 +383,61 @@ export default function Lobby({
           )}
         </div>
 
+        {/* Match Settings: Sound Pack Selection */}
+        {(() => {
+          const selectedPackId = room.settings?.soundPack || 'pack_1';
+          const activePack = soundPackManager.getPackById(selectedPackId);
+          return (
+            <div className="bg-slate-900/80 border-2 border-black rounded-2xl p-3 shadow-[2px_2px_0px_#000]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Package size={16} className="text-amber-400" />
+                  <span className="text-xs font-black text-white">Sound Pack</span>
+                </div>
+                <span className="text-[11px] text-slate-400 font-bold">
+                  {activePack.title}: {activePack.name}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-white/10">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">{activePack.emoji || '📦'}</span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-white">{activePack.name}</span>
+                      {activePack.requiresPin && (
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          <Lock size={9} /> PIN: {activePack.pinCode}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400">
+                      {activePack.sounds?.length || 14} Sounds • Viral Memes & Vocals
+                    </span>
+                  </div>
+                </div>
+
+                {isHost ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundSynthesizer.playUiSound('click');
+                      setIsPackModalOpen(true);
+                    }}
+                    className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3 flex items-center gap-1 shadow-[2px_2px_0px_#000]"
+                  >
+                    <span>Change Pack</span>
+                  </button>
+                ) : (
+                  <span className="text-[11px] font-bold text-amber-300">
+                    Selected by Host
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Players List (Clean text, no avatars/caricatures) */}
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -516,6 +574,20 @@ export default function Lobby({
           )}
         </div>
       </div>
+
+      {/* Sound Pack Gateway Modal */}
+      <SoundPackModal
+        isOpen={isPackModalOpen}
+        onClose={() => setIsPackModalOpen(false)}
+        selectedPackId={room.settings?.soundPack || 'pack_1'}
+        onSelectPack={(packId) => {
+          if (onUpdateSettings) {
+            onUpdateSettings({ soundPack: packId });
+          }
+          setIsPackModalOpen(false);
+        }}
+        isHost={isHost}
+      />
     </div>
   );
 }
