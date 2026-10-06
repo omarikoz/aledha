@@ -42,6 +42,9 @@ export default function App() {
       audioEngine.unlockAudioContext();
       const stream = await audioEngine.initMic();
       setMicReady(true);
+      if (stream) {
+        voiceChat.setLocalStream(stream);
+      }
       if (room?.id && stream) {
         voiceChat.connect(room.id, stream).catch(() => {});
       }
@@ -60,6 +63,7 @@ export default function App() {
     // 2. Unlock AudioContext and re-check mic on first user touch/tap
     const unlock = () => {
       audioEngine.unlockAudioContext();
+      voiceChat.resumeAllAudio();
       if (!audioEngine.isMicReady()) {
         handleRequestMic();
       }

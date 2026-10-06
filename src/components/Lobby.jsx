@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Crown, Play, Settings, Copy, Check, Bot, Package, Lock } from 'lucide-react';
+import { Users, Crown, Play, Settings, Copy, Check, Bot, Package, Lock, Mic, MicOff } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundPackManager } from '../services/soundPackManager.js';
@@ -513,13 +513,12 @@ export default function Lobby({
                       </span>
                     )}
                     {p.isMuted ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-red-600/25 text-red-400 border border-red-500/40">
-                        <span>🔇</span>
-                        <span>Muted</span>
+                      <span title="Microphone Muted" className="inline-flex items-center text-red-500">
+                        <MicOff size={15} className="text-red-500 stroke-[2.5]" />
                       </span>
                     ) : (
-                      <span title="Mic Active" className="text-xs text-emerald-400">
-                        🎙️
+                      <span title="Microphone Active" className="inline-flex items-center text-emerald-400">
+                        <Mic size={15} className="text-emerald-400 stroke-[2.5]" />
                       </span>
                     )}
                   </div>
@@ -542,38 +541,6 @@ export default function Lobby({
               </div>
             )}
           </div>
-        </div>
-
-        {/* Microphone & In-Game Voice Chat Status in Lobby */}
-        <div className="p-3 rounded-2xl bg-slate-950/90 border-2 border-black shadow-[2px_2px_0px_#000] flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-black text-white">Microphone & Voice Chat</span>
-              {micVerified && (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              )}
-            </div>
-            <span className="text-[10px] text-slate-400 block">
-              {micVerified
-                ? '🎙️ Live Voice Chat Active — Talk freely with players in lobby!'
-                : 'Enable mic to chat with friends & record your mimic sound'}
-            </span>
-          </div>
-
-          {micVerified ? (
-            <span className="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-400 text-xs font-black border border-emerald-500/40">
-              🟢 Live Voice
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={handleEnableMic}
-              disabled={testingMic}
-              className="btn-arcade btn-arcade-gold text-xs py-1.5 px-3"
-            >
-              {testingMic ? 'Connecting...' : '🎙️ Enable Mic'}
-            </button>
-          )}
         </div>
 
         {/* Start Game Action Button - Strict Sound Pack & Minimum 2 Players */}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Volume2, Sparkles, Check, Users, Clock, Bot, Activity, Zap } from 'lucide-react';
+import { Volume2, Sparkles, Check, Users, Clock, Bot, Activity, Zap, Mic, MicOff } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 import { audioEngine } from '../services/audioEngine.js';
 
@@ -185,15 +185,16 @@ export default function RevealScreen({
             )}
             {(() => {
               const contestantPlayer = room?.players?.find((p) => p.id === currentRec.playerId);
-              if (contestantPlayer?.isMuted) {
-                return (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-lg bg-red-600/25 text-red-400 border border-red-500/40">
-                    <span>🔇</span>
-                    <span>Muted</span>
-                  </span>
-                );
-              }
-              return null;
+              const isMuted = contestantPlayer?.isMuted;
+              return isMuted ? (
+                <span title="Microphone Muted" className="inline-flex items-center text-red-500">
+                  <MicOff size={16} className="text-red-500 stroke-[2.5]" />
+                </span>
+              ) : (
+                <span title="Microphone Active" className="inline-flex items-center text-emerald-400">
+                  <Mic size={16} className="text-emerald-400 stroke-[2.5]" />
+                </span>
+              );
             })()}
           </div>
         </div>

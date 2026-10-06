@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Trophy, Crown, ArrowRight, Sparkles, Flame } from 'lucide-react';
+import { Trophy, Crown, ArrowRight, Sparkles, Flame, Mic, MicOff } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
 export default function Leaderboard({
@@ -67,6 +67,15 @@ export default function Leaderboard({
                       {isMe && (
                         <span className="text-[10px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-black">
                           YOU
+                        </span>
+                      )}
+                      {p.isMuted ? (
+                        <span title="Microphone Muted" className="inline-flex items-center text-red-500">
+                          <MicOff size={14} className="text-red-500 stroke-[2.5]" />
+                        </span>
+                      ) : (
+                        <span title="Microphone Active" className="inline-flex items-center text-emerald-400">
+                          <Mic size={14} className="text-emerald-400 stroke-[2.5]" />
                         </span>
                       )}
                     </div>

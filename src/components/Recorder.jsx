@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, CheckCircle2, AlertCircle } from 'lucide-react';
 import { audioEngine } from '../services/audioEngine.js';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
@@ -184,13 +184,14 @@ export default function Recorder({ sound, timer, player, room, isMuted, onToggle
           <button
             type="button"
             onClick={onToggleMute}
-            className={`px-3 py-1 rounded-full text-xs font-black border-2 transition shadow-[1px_1px_0px_#000] ${
+            className={`px-3 py-1 rounded-full text-xs font-black border-2 transition shadow-[1px_1px_0px_#000] inline-flex items-center gap-1.5 ${
               isMuted
                 ? 'bg-red-600 text-white border-red-900 animate-pulse'
                 : 'bg-slate-900 text-slate-300 border-black hover:bg-slate-800'
             }`}
           >
-            {isMuted ? '🔇 Muted' : '🎙️ Mute'}
+            {isMuted ? <MicOff size={13} className="text-white stroke-[2.5]" /> : <Mic size={13} className="text-emerald-400 stroke-[2.5]" />}
+            <span>{isMuted ? 'Muted' : 'Mute'}</span>
           </button>
         </div>
 

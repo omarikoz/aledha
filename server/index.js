@@ -591,27 +591,28 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('signal_send', ({ to, signal }) => {
-    if (to) {
-      io.to(to).emit('signal_receive', {
+  socket.on('signal_send', ({ to, targetPeerId, signal }) => {
+    const target = to || targetPeerId;
+    if (target && signal) {
+      io.to(target).emit('signal_receive', {
         from: socket.id,
         signal
       });
-      io.to(to).emit('voice_signal', {
+      io.to(target).emit('voice_signal', {
         fromPeerId: socket.id,
         signal
       });
     }
   });
 
-  socket.on('voice_signal', ({ targetPeerId, signal }) => {
-    const to = targetPeerId;
-    if (to) {
-      io.to(to).emit('voice_signal', {
+  socket.on('voice_signal', ({ targetPeerId, to, signal }) => {
+    const target = targetPeerId || to;
+    if (target && signal) {
+      io.to(target).emit('voice_signal', {
         fromPeerId: socket.id,
         signal
       });
-      io.to(to).emit('signal_receive', {
+      io.to(target).emit('signal_receive', {
         from: socket.id,
         signal
       });

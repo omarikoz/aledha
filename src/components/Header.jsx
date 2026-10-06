@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Volume2, Users, Copy, Check, Sparkles, Music } from 'lucide-react';
+import { Volume2, Users, Copy, Check, Sparkles, Music, Mic, MicOff } from 'lucide-react';
 import { soundSynthesizer } from '../services/soundSynthesizer.js';
 
 export default function Header({
@@ -74,7 +74,7 @@ export default function Header({
               : 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-black'
           }`}
         >
-          <span>{isMuted ? '🔇' : '🎙️'}</span>
+          {isMuted ? <MicOff size={15} className="text-white stroke-[2.5]" /> : <Mic size={15} className="text-white stroke-[2.5]" />}
           <span>{isMuted ? 'Muted' : 'Mute'}</span>
         </button>
 
